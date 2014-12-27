@@ -1,0 +1,31 @@
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
+
+from django.db import models, migrations
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('ups', '0005_auto_20141225_1215'),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='UPS_CO_FILE',
+            fields=[
+                ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
+                ('fileName', models.URLField(default=b'')),
+                ('contents', models.TextField(default=b'')),
+            ],
+            options={
+            },
+            bases=(models.Model,),
+        ),
+        migrations.AlterField(
+            model_name='ups_pkt',
+            name='DOC_DATE',
+            field=models.CharField(default=b'12/26/14 07:34:58', max_length=17),
+            preserve_default=False,
+        ),
+    ]

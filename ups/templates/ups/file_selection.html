@@ -1,0 +1,23 @@
+{% extends "base/base.html" %}
+{% load staticfiles %}
+{% block extra_scripts %}
+    <script src="https://www.dropbox.com/static/api/2/dropins.js" id="dropboxjs" data-app-key="m76qecnh6atbi8f" ></script>
+    <script src="{% static 'ups/js/chooser.js' %}"></script>
+{% endblock extra_scripts %}
+{% block content %}
+{% if error_message %}<p><strong>{{ error_message }}</strong></p>{% endif %}
+    <div id="container">
+        {# buttons go here #}
+    </div>
+    <div id="returned_files">
+            {# returned filenames go here #}
+            <ul id="file_list">
+            </ul>
+        <form action="{% url 'ups:file_selection' %}" method="post">
+            {% csrf_token %}
+            {{ form }}
+            <input 
+        <input type="submit" value="Submit" />
+    </div>
+</form>
+{% endblock content %}
