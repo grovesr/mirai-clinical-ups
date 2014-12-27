@@ -40,7 +40,7 @@ def file_selection(request):
                     'error_message': "Problem with the files.",
                 })
             ups_pkt=mirai_initialize_ups_pkt(files,inputType)
-            
+            #
             # redirect to a new URL:)
             return HttpResponseRedirect(reverse('ups:file_creation',args=(ups_pkt,)))
     # if a GET (or any other method) we'll create a blank form
