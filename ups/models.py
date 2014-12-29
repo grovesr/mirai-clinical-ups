@@ -44,7 +44,7 @@ def mirai_get_files(inputType,args):
             if not os.path.isdir(poFile) and not reMatch.match(poFile):
                 try:
                     with open(poFile, 'rt') as fStr:
-                        files[fStr.name]=fStr.readlines()
+                        files[fStr.name]=fStr.read()
                 except:
                     # failed to open file
                     files[poFile]=['FILE ERROR: unable to open file "' + poFile + '"']
@@ -53,7 +53,7 @@ def mirai_get_files(inputType,args):
         for poUrl in args:
             try:
                 urlStr = urllib2.urlopen(poUrl)
-                files[urlStr.url]=urlStr.readlines()
+                files[urlStr.url]=urlStr.read()
             except:
                 files[poUrl]=['URL ERROR: unable to open URL "' + poUrl + '"']
     return files
@@ -68,7 +68,7 @@ def mirai_initialize_ups_pkt(files,inputType):
     rand='{:010}'.format(random.randrange(1,999999999,1))
     div='001'
     fileName=upsShipOrderDir+os.sep+warehouse+company+div+'_FF_PICKTIKET_'+rand+'_'+fileTimeStamp
-    ups_pkt=UPS_PKT()
+    ups_pkt=PickTicket()
     ups_pkt.DOC_DATE=timezone.datetime.fromtimestamp(timeStamp).strftime('%m/%d/%y %H:%M:%S')
     ups_pkt.warehouse=warehouse
     ups_pkt.CMPY_NAME=company
@@ -78,20 +78,29 @@ def mirai_initialize_ups_pkt(files,inputType):
     ups_pkt.save()
     
     files=mirai_get_files(inputType, files)
-    ups_co_fileids=[]
+    #go through the files and store each row as a CustOrderQueryRow
     for f,contents in files.iteritems():
-        this_ups_co_file=UPS_CO_FILE()
-        this_ups_co_file.filename=f
-        this_ups_co_file.contents=contents
-        this_ups_co_file.ups_pkt=ups_pkt
-        this_ups_co_file.save()
-        ups_co_fileids.append(this_ups_co_file.id)
-    ups_pkt.read_files(ups_co_fileids)
+        fileTimeStamp=timezone.datetime.now()
+        header=True
+        recordNumber=0
+        for fileLine in contents.splitlines():
+            thisCo=CustOrderQueryRow()
+            if header:
+                thisCo.header=True
+                header=False
+            thisCo.ups_pkt=ups_pkt
+            thisCo.record=fileLine
+            thisCo.queryRecordNumber=recordNumber
+            thisCo.queryId=fileTimeStamp
+            thisCo.query=f
+            recordNumber+=1
+            thisCo.save()
+    ups_pkt.read_files()
     return ups_pkt
 
 # Create your models here.
     
-class UPS_PKT(models.Model):
+class PickTicket(models.Model):
     '''
     UPS Pickticket object
     '''
@@ -103,20 +112,15 @@ class UPS_PKT(models.Model):
     DOC_DATE=models.CharField(max_length=17, default=timezone.datetime.now().strftime('%m/%d/%y %H:%M:%S'))                     # 17 char MM/DD/YY HH:MM:SS
     # need accessor for TRANS_ID
     # PH section
-    PH=[]                           # holds pickticket loop items
     # TRL section
     TRL_REC_TYPE=models.CharField(max_length=3, default='TRL')              # 3 char
     #
-    poObjects={} # orders from all sources
-    parseErrors={} # dictionary of various errors related to parsed files
-    timeStamp=''
+    parseErrors=models.TextField(default='') # dictionary of various errors related to parsed files
     fileName=models.URLField(default='')
     fileContents=models.TextField(default='')
-    warehouse='' # for passing down into the PH object
-    division='' # for passing down into the PH object
     
     def __str__(self):
-        res = "UPS_PKT instance:" + self.fileName
+        res = "PickTicket instance:" + self.fileName
         return res
     
     def hdr(self):
@@ -148,174 +152,75 @@ class UPS_PKT(models.Model):
         # HDR + TRL + pickticket loops + detail loops
         return('{:07}'.format(2+index))
     
-    def read_files(self,fileids):
-        mirai={}
-        amazon={}
-        ss={}
-        for fileid in fileids:
-            try:
-                fileName=UPS_CO_FILE.get(fileid).fileName
-                poFile=UPS_CO_FILE.get(fileid).contents.splitlines()
-                mirai[fileName]=[]
-                amazon[fileName]=[]
-                ss[fileName]=[]
-                lineNo = 0
-                header=poFile[0]
-                lineNo += 1
-                # identify file type
-                reMatch=re.compile('.*v_orders_id.*')
-                if reMatch.match(header):
-                    #print 'found Mirai file:"'+poFile+'"'
-                    self.parseErrors[fileName]=[]
-                    for line in poFile[1:]:
-                        lineNo += 1
-                        miraiIncr=Zen_CO()
-                        miraiIncr.fromFile=fileName
-                        miraiIncr.fileLineNo=lineNo
-                        miraiIncr.filename=fileName
-                        miraiIncr.read_header(header)
-                        if miraiIncr.read_line(line.rstrip()) < 0:
-                            # improperly formatted record
-                            self.parseErrors[fileName].append('PARSE ERROR: improperly formatted line: # '+str(lineNo)+ ' in "' + fileName + '"')
-                        mirai[fileName].append(miraiIncr)
-                reMatch=re.compile('.*buyer-phone-number.*')
-                if reMatch.match(header):
-                    #print 'found Amazon file:"'+poFile+'"'
-                    self.parseErrors[fileName]=[]
-                    for line in poFile[1:]:
-                        lineNo += 1
-                        amazonIncr=Amazon_CO()
-                        amazonIncr.fromFile=fileName
-                        amazonIncr.fileLineNo=lineNo
-                        amazonIncr.filename=fileName
-                        amazonIncr.read_header(header)
-                        if amazonIncr.read_line(line.rstrip()) < 0:
-                            # improperly formatted record
-                            self.parseErrors[fileName].append('PARSE ERROR: improperly formatted line: # '+str(lineNo)+ ' in "' + fileName + '"')
-                        amazon[fileName].append(amazonIncr)
-                reMatch=re.compile('.*pack-slip-type.*')
-                if reMatch.match(header):
-                    #print 'found ShipStation file:"'+poFile+'"'
-                    self.parseErrors[fileName]=[]
-                    for line in poFile[1:]:
-                        lineNo += 1
-                        ssIncr=SS_CO()
-                        ssIncr.fromFile=fileName
-                        ssIncr.fileLineNo=lineNo
-                        ssIncr.filename=fileName
-                        ssIncr.read_header(header)
-                        if ssIncr.read_line(line.rstrip()) < 0:
-                            # improperly formatted record
-                            self.parseErrors[fileName].append('PARSE ERROR: improperly formatted line: # '+str(lineNo)+ ' in "' + fileName + '"')
-                        ss[fileName].append(ssIncr)
-                reMatch=re.compile('.*ERROR.*')
-                if reMatch.match(header):
-                    self.parseErrors[fileName]=[]
-                    #found a file error
-                    self.parseErrors[fileName].append(header)
-            except:
-                self.parseErrors[fileName].append('FILE ERROR: Unable to open "' + fileName + '" for reading')
-        self.poObjects['mirai']=mirai
-        self.poObjects['amazon']=amazon
-        self.poObjects['ss']=ss
+    def read_files(self):
+        reMatchZen=re.compile('.*v_orders_id.*')
+        reMatchAmazon=re.compile('.*buyer-phone-number.*')
+        reMatchSS=re.compile('.*pack-slip-type.*')
+        #get the distinct queries for this pickTicket instance
+        queryIds=CustOrderQueryRow.objects.filter(ups_pkt_id=self.id).values('queryId').distinct()
+        for  queryId in queryIds:
+            thisQuery=CustOrderQueryRow.objects.filter(queryId=queryId)
+            header=thisQuery.filter(header=True)
+            #get the query records for this query
+            thisQueryRows=thisQuery.filter(header=False)
+            for queryRow in thisQueryRows:
+                # create a custOrder instance for this queryRow and parse the query data into it
+                coIncr=CustOrder()
+                coIncr.queryName=thisQuery.query
+                coIncr.queryLineNo=thisQuery.queryRecordNumber
+                coIncr.read_header(header)
+                coIncr.ups_pkt=self
+                if reMatchZen.match(header):
+                    result=coIncr.read_zen_line(queryRow.record.rstrip())
+                if reMatchSS.match(header):
+                    result=coIncr.read_ss_line(queryRow.record.rstrip())
+                if reMatchAmazon.match(header):
+                    result=coIncr.read_amazon_line(queryRow.record.rstrip())
+                
+                if result < 0:
+                    # improperly formatted record
+                    queryRow.parseError='PARSE ERROR: improperly formatted line'
+                    queryRow.save()
+                coIncr.save()
         self.parse_po_objects()
         
     def parse_po_objects(self):
-        phItems={}
-        itemIndex=0
         phIndex=0
-        for key,value in self.poObjects.iteritems():
-            for fName,poList in value.iteritems():
-                if key == 'mirai':
-                    for mirai in poList:
-                        if 'mirai_'+mirai.v_orders_id not in phItems:
-                            # start compiling a list of items ordered by this customer
-                            phIndex+=1
-                            phItems['mirai_'+mirai.v_orders_id]=UPS_PH({'WHSE':self.warehouse,
-                                                                        'CO':self.CMPY_NAME,
-                                                                        'DIV':self.division,
-                                                                        'STAT_CODE':'10',
-                                                                        'PKT_PROFILE_ID':'MIRAI001',
-                                                                        'PKT_CTRL_NBR':'MC'+self.timeStamp,
-                                                                        'CARTON_LABEL_TYPE':'001',
-                                                                        'NBR_LABEL':'001',
-                                                                        'CONTENT_LABEL_TYPE':'001',
-                                                                        'NBR_OF_CONTNT_LABEL':'001',
-                                                                        'PACK_SLIP_TYPE':'001',
-                                                                        'LANG_ID':'EN',
-                                                                        'PH1_FREIGHT_TERMS':'0',
-                                                                        'PHI_SPL_INSTR_NBR':'{:03}'.format(phIndex),
-                                                                        'PHI_SPL_INSTR_TYPE':'QV',
-                                                                        'PHI_SPL_INSTR_CODE':['01','08'],
-                                                                        'filename':fName})
-                            if phItems['mirai_'+mirai.v_orders_id].parse(mirai) < 0:
-                                self.parseErrors['mirai_'+mirai.v_orders_id]=['PARSE ERROR: Unable to create PH item: '+'mirai_'+mirai.v_orders_id+' from file "'+fName+'"']
-                                del phItems['mirai_'+mirai.v_orders_id]
-                        if 'mirai_'+mirai.v_orders_id in phItems:
-                            itemIndex+=1
-                            phItems['mirai_'+mirai.v_orders_id].add_mirai_detail(mirai,itemIndex)
-                            lineError=phItems['mirai_'+mirai.v_orders_id].check_line()
-                            if lineError != '':
-                                # some missing information in this line item, generate an error
-                                self.parseErrors['mirai_'+mirai.v_orders_id]=[lineError]
-                if key == 'amazon':
-                    for amazon in poList:
-                        if 'amazon_'+amazon.order_id not in phItems:
-                            # start compiling a list of items ordered by this customer
-                            phIndex+=1
-                            phItems['amazon_'+amazon.order_id]=UPS_PH({'WHSE':self.warehouse,
-                                                                        'CO':self.CMPY_NAME,
-                                                                        'DIV':self.division,
-                                                                        'STAT_CODE':'10',
-                                                                        'PKT_PROFILE_ID':'MIRAI001',
-                                                                        'PKT_CTRL_NBR':'MC'+self.timeStamp,
-                                                                        'LANG_ID':'EN',
-                                                                        'PH1_FREIGHT_TERMS':'0',
-                                                                        'PHI_SPL_INSTR_NBR':'{:03}'.format(phIndex),
-                                                                        'PHI_SPL_INSTR_TYPE':'QV',
-                                                                        'PHI_SPL_INSTR_CODE':['01','08'],
-                                                                        'filename':fName})
-                            if phItems['amazon_'+amazon.order_id].parse(amazon) < 0:
-                                self.parseErrors['amazon_'+amazon.order_id]=['PARSE ERROR: Unable to create PH item: "'+'amazon_'+amazon.order_id+'"']
-                                del phItems['amazon_'+amazon.order_id]
-                        if 'amazon_'+amazon.order_id in phItems:
-                            itemIndex+=1
-                            phItems['amazon_'+amazon.order_id].add_amazon_detail(amazon,itemIndex)
-                            lineError=phItems['amazon_'+amazon.order_id].check_line()
-                            if lineError != '':
-                                # some missing information in this line item, generate an error
-                                phIndex+=1
-                                self.parseErrors['amazon_'+amazon.order_id]=[lineError]
-                if key == 'ss':
-                    for ss in poList:
-                        if 'ss_'+ss.order_id not in phItems:
-                            # start compiling a list of items ordered by this customer
-                            phIndex+=2
-                            phItems['ss_'+ss.order_id]=UPS_PH({'WHSE':self.warehouse,
-                                                               'CO':self.CMPY_NAME,
-                                                               'DIV':self.division,
-                                                               'STAT_CODE':'10',
-                                                               'PKT_PROFILE_ID':'MIRAI001',
-                                                               'PKT_CTRL_NBR':'MC'+self.timeStamp,
-                                                               'LANG_ID':'EN',
-                                                               'PH1_FREIGHT_TERMS':'0',
-                                                               'PHI_SPL_INSTR_NBR':'{:03}'.format(phIndex),
-                                                               'PHI_SPL_INSTR_TYPE':'QV',
-                                                               'PHI_SPL_INSTR_CODE':['01','08'],
-                                                               'filename':fName})
-                            if phItems['ss_'+ss.order_id].parse(ss) < 0:
-                                self.parseErrors['ss_'+ss.order_id]=['PARSE ERROR: Unable to create PH item: "'+'ss_'+ss.order_id+'"']
-                                del phItems['ss_'+ss.order_id]
-                        if 'ss_'+ss.order_id in phItems:
-                            itemIndex+=1
-                            phItems['ss_'+ss.order_id].add_ss_detail(ss,itemIndex)
-                            lineError=phItems['ss_'+ss.order_id].check_line()
-                            if lineError != '':
-                                # some missing information in this line item, generate an error
-                                self.parseErrors['ss_'+ss.order_id]=[lineError]
-        for key,phItem in phItems.iteritems():
-            self.PH.append(phItem)
-            phItem.save()
+        itemIndex=0
+        #find all distinct orderIds
+        orderIds=CustOrder.objects.filter(ups_pkt=self.id).values('orderId').distinct()
+        #for each order line within a unique orderId (may consist of multiple order lines)
+        for orderId in orderIds:
+            coLines=CustOrder.filter(pk=orderId)
+            #for each custOrder line with a given unique orderId
+            for coLine in coLines:
+                phIndex+=2
+                phItem=PH()
+                phItem.WHSE=self.warehouse
+                phItem.CO=self.CMPY_NAME
+                phItem.DIV=self.division
+                phItem.STAT_CODE='10'
+                phItem.PKT_PROFILE_ID=self.PKT_PROFILE_ID
+                phItem.PKT_CTRL_NBR='MC'+self.timeStamp
+                phItem.LANG_ID='EN'
+                phItem.PH1_FREIGHT_TERMS='0'
+                phItem.PHI_SPL_INSTR_NBR='{:03}'.format(phIndex)
+                phItem.PHI_SPL_INSTR_TYPE='QV'
+                phItem.PHI_SPL_INSTR_CODE='01,08'
+                phItem.ups_pkt=self.id
+                if phItem.parse(coLine) < 0:
+                    # unable to create a PH object from this. Append to any errors already 
+                    coLine.parseError='PARSE ERROR: Unable to create PH item: from CustOrder'
+                    coLine.save()
+                else:
+                    itemIndex+=1
+                    phItem.add_detail(itemIndex,coLine)
+                    lineError=phItem.check_line()
+                    if lineError != '':
+                        # some missing information in this line item, generate an error
+                        coLine.parseError.append(lineError)
+                        coLine.save()
+                    phItem.save()
     
     def parse_report(self):
         fileErrors=[]
@@ -398,438 +303,143 @@ class UPS_PKT(models.Model):
             reportStr+='\n'
         return(reportStr)
     
-class UPS_CO_FILE(models.Model):
+class CustOrderQueryRow(models.Model):
     """
-    UPS Customer Order files
+    UPS Customer Order Query
+    There may be ,multiple records for a given query
+    Each record consists of a TextField with delimeter separated values
+    Query may be a filename, URL, or web service call
+    QueryId is the unique timestamp that ties together the query rows for a given query
+    Sep gives a clue to how to parse the record
+    Header is a True/False indicator of whether this is a header record or not.
+    A header record will provide the field names for the other record lines for a given query
+    parseError holds any errors generated when parsing information out of the row 
     """
-    ups_pkt = models.ForeignKey(UPS_PKT)
-    fileName=models.URLField(default='')
-    contents=models.TextField(default='')
+    ups_pkt = models.ForeignKey(PickTicket)
+    query=models.CharField(max_length=1024, default='')
+    queryId=models.DateTimeField(default=timezone.datetime.now())
+    queryRecordNumber=models.IntegerField(default=0)
+    record=models.TextField(default='')
+    header=models.BooleanField(default=False)
+    parseError=models.TextField(default='')
     
-class UPS_PH(models.Model):
+    
+class PH(models.Model):
     '''
-    UPS Pickticket Loop, contained in a UPS_PKT (Shipment Order)
+    UPS Pickticket Loop, contained in a PickTicket (Shipment Order)
     '''
-    SEP='|' # record separator
-    fileLineNo=0
-    pkt=models.ForeignKey(UPS_PKT)
-    filename=''
-    REC_TYPE='PH'                   # 2 char
-    WHSE=''                         # 3 char
-    CO=''                           # 10 char
-    DIV=''                          # 10 char
-    STAT_CODE='10'                  # 2 char
-    PKT_PROFILE_ID=''               # 10 char
-    PKT_CTRL_NBR=''                 # 10 char
-    PKT_NBR=''                          # opt. 11 char
-    PKT_SFX=''                          # opt. 3 char
-    ORD_NBR=''                          # opt. 3 char
-    ORD_SFX=''                          # opt. 3 char
-    ORD_TYPE=''                         #opt. 2 char
-    SHIPTO=''                           # opt 10 char
-    SHIPTO_NAME=''                  # 35 characters
-    SHIPTO_CONTACT=''               # 30 characters
-    SHIPTO_ADDR_1=''                    # opt. 75 char
-    SHIPTO_ADDR_2=''                    # opt. 75 char
-    SHIPTO_ADDR_3=''                    # opt. 75 char
-    SHIPTO_CITY=''                      # opt. 40 char
-    SHIPTO_STATE=''                     # opt. 3 char
-    SHIPTO_ZIP=''                       # opt. 11 char
-    SHIPTO_CNTRY=''                     # opt. 4 char
-    TEL_NBR=''                          # opt. 15 char
-    SOLDTO=''                           # opt. 10 char
-    SOLDTO_NAME=''                      # opt. 35 char
-    SOLDTO_ADDR_1=''                    # opt. 75 char
-    SOLDTO_ADDR_2=''                    # opt. 75 char
-    SOLDTO_ADDR_3=''                    # opt. 75 char
-    SOLDTO_CITY=''                      # opt. 40 char
-    SOLDTO_STATE=''                     # opt. 3 char
-    SOLDTO_ZIP=''                       # opt. 11 char
-    SOLDTO_CNTRY=''                     # opt. 4 char
-    SHIP_VIA='UUS2'                     # opt. 4 char (Surepost=UUS2, UPS grnd=UU10)
-    CARTON_LABEL_TYPE=''                # opt. 3 char
-    NBR_OF_LABEL=''                     # opt. 3 char
-    CONTNT_LABEL_TYPE=''                # opt. 3 char
-    NBR_OF_CONTNT_LABEL=''              # opt. 3 char
-    NBR_OF_PAKING_SLIPS=''              # opt. 3 char
-    PACK_SLIP_TYPE=''                   # opt. 2 char
-    LANG_ID=''                          # opt. 3 char
+    SEP=models.CharField(max_length=1,default='|') # record separator
+    itemIndex = models.IntegerField(default=0)
+    ups_pkt=models.ForeignKey(PickTicket)
+    REC_TYPE=models.CharField(max_length=2,default='PH')                   # 2 char
+    WHSE=models.CharField(max_length=3,default='')                         # 3 char
+    CO=models.CharField(max_length=10,default='')                          # 10 char
+    DIV=models.CharField(max_length=10,default='')                         # 10 char
+    STAT_CODE=models.CharField(max_length=2,default='10')                  # 2 char
+    PKT_PROFILE_ID=models.CharField(max_length=10,default='')              # 10 char
+    PKT_CTRL_NBR=models.CharField(max_length=10,default='')                # 10 char
+    PKT_NBR=models.CharField(max_length=11,default='',blank=True)           # opt. 11 char
+    PKT_SFX=models.CharField(max_length=3,default='',blank=True)            # opt. 3 char
+    ORD_NBR=models.CharField(max_length=3,default='',blank=True)            # opt. 3 char
+    ORD_SFX=models.CharField(max_length=3,default='',blank=True)            # opt. 3 char
+    ORD_TYPE=models.CharField(max_length=2,default='',blank=True)           #opt. 2 char
+    SHIPTO=models.CharField(max_length=10,default='',blank=True)            # opt 10 char
+    SHIPTO_NAME=models.CharField(max_length=35,default='')                 # 35 characters
+    SHIPTO_CONTACT=models.CharField(max_length=30,default='')              # 30 characters
+    SHIPTO_ADDR_1=models.CharField(max_length=75,default='',blank=True)     # opt. 75 char
+    SHIPTO_ADDR_2=models.CharField(max_length=75,default='',blank=True)     # opt. 75 char
+    SHIPTO_ADDR_3=models.CharField(max_length=75,default='',blank=True)     # opt. 75 char
+    SHIPTO_CITY=models.CharField(max_length=40,default='',blank=True)       # opt. 40 char
+    SHIPTO_STATE=models.CharField(max_length=3,default='',blank=True)       # opt. 3 char
+    SHIPTO_ZIP=models.CharField(max_length=11,default='',blank=True)        # opt. 11 char
+    SHIPTO_CNTRY=models.CharField(max_length=4,default='',blank=True)       # opt. 4 char
+    TEL_NBR=models.CharField(max_length=15,default='',blank=True)           # opt. 15 char
+    SOLDTO=models.CharField(max_length=10,default='',blank=True)            # opt. 10 char
+    SOLDTO_NAME=models.CharField(max_length=35,default='',blank=True)       # opt. 35 char
+    SOLDTO_ADDR_1=models.CharField(max_length=75,default='',blank=True)     # opt. 75 char
+    SOLDTO_ADDR_2=models.CharField(max_length=75,default='',blank=True)     # opt. 75 char
+    SOLDTO_ADDR_3=models.CharField(max_length=75,default='',blank=True)     # opt. 75 char
+    SOLDTO_CITY=models.CharField(max_length=40,default='',blank=True)       # opt. 40 char
+    SOLDTO_STATE=models.CharField(max_length=3,default='',blank=True)       # opt. 3 char
+    SOLDTO_ZIP=models.CharField(max_length=11,default='',blank=True)        # opt. 11 char
+    SOLDTO_CNTRY=models.CharField(max_length=4,default='',blank=True)       # opt. 4 char
+    SHIP_VIA=models.CharField(max_length=4,default='UUS2',blank=True)       # opt. 4 char (Surepost=UUS2, UPS grnd=UU10)
+    CARTON_LABEL_TYPE=models.CharField(max_length=3,default='',blank=True)  # opt. 3 char
+    NBR_OF_LABEL=models.CharField(max_length=3,default='',blank=True)       # opt. 3 char
+    CONTNT_LABEL_TYPE=models.CharField(max_length=3,default='',blank=True)  # opt. 3 char
+    NBR_OF_CONTNT_LABEL=models.CharField(max_length=3,default='',blank=True)# opt. 3 char
+    NBR_OF_PAKING_SLIPS=models.CharField(max_length=3,default='',blank=True)# opt. 3 char
+    PACK_SLIP_TYPE=models.CharField(max_length=2,default='',blank=True)     # opt. 2 char
+    LANG_ID=models.CharField(max_length=3,default='',blank=True)            # opt. 3 char
                                         # opt. PH1 section
     # PH1 section
-    PH1_REC_TYPE='PH1'               # 2 char
-    PH1_ACCT_RCVBL_ACCT_NBR=''          # opt. 10 char
-    PH1_ACCT_RCVBL_CODE=''              # opt. 2 char
-    PH1_CUST_PO_NBR=''                  # opt. 26 char
-    PH1_PRTY_CODE=''                    # opt. 2 char
-    PH1_PRTY_SFX=''                     # opt. 2 char
-    PH1_ORD_DATE=''                     # opt. 14 char MM/DD/YY
-    PH1_START_SHIP_DATE=''              # opt. 14 char MM/DD/YY
-    PH1_STOP_SHIP_DATE=''               # opt. 14 char MM/DD/YY
-    PH1_SCHED_DLVRY_DATE=''             # opt. 14 char MM/DD/YY
-    PH1_EARLIEST_DLVRY_TIME=''          # opt. 4 char 1200??
-    PH1_SCHED_DLVRY_DATE_END=''         # opt. 14 char MM/DD/YY
-    PH1_RTE_GUIDE_NBR=''                # opt. 10 char
-    PH1_CUST_RTE=''                     # opt. 1 char (Y,N)
-    PH1_RTE_ATTR=''                     # opt. 30 char
-    PH1_RTE_ID=''                       # opt. 10 char
-    PH1_RTE_STOP_SEQ=''                 # opt. 5 char
-    PH1_RTE_TO=''                       # opt. 10 char
-    PH1_RTE_TYPE_1=''                   # opt. 2 char
-    PH1_RTE_TYPE_2=''                   # opt. 2 char
-    PH1_RTE_ZIP=''                      # opt. 11 char
-    PH1_RTE_SWC_NBR=''                  # opt. 10 char
-    PH1_CONSOL_NBR=''                   # opt. 10 char
-    PH1_TOTAL_DLRS_UNDISC=''            # opt. 11 char
-    PH1_TOTAL_DLRS_DISC=''              # opt. 11 char
-    PH1_CURR_CODE=''                    # opt. 10 char
-    PH1_PROD_VALUE=''                   # opt. 11 char
-    PH1_FREIGHT_TERMS=''                # opt. 1 char 0 = Prepaid (Default),1 = Collect Billing,1 0:1,2 = Consignee Billing.3 = Third Party Billing
-    PH1_MARK_FOR=''                     # opt. 25 char
-    PH1_INCO_TERMS=''                   # opt. 3 char
-    PH1_BILL_ACCT_NBR=''                # opt. 10 char
-    PH1_COD_FUNDS=''                    # OPT. 1 CHAR
-    PH1_INTL_GOODS_DESC=''              # opt. 35 char
+    PH1_REC_TYPE=models.CharField(max_length=3,default='PH1')                    # 3 char
+    PH1_ACCT_RCVBL_ACCT_NBR=models.CharField(max_length=10,default='',blank=True) # opt. 10 char
+    PH1_ACCT_RCVBL_CODE=models.CharField(max_length=2,default='',blank=True)      # opt. 2 char
+    PH1_CUST_PO_NBR=models.CharField(max_length=26,default='',blank=True)         # opt. 26 char
+    PH1_PRTY_CODE=models.CharField(max_length=2,default='',blank=True)            # opt. 2 char
+    PH1_PRTY_SFX=models.CharField(max_length=3,default='',blank=True)             # opt. 2 char
+    PH1_ORD_DATE=models.CharField(max_length=14,default='',blank=True)            # opt. 14 char MM/DD/YY
+    PH1_START_SHIP_DATE=models.CharField(max_length=14,default='',blank=True)     # opt. 14 char MM/DD/YY
+    PH1_STOP_SHIP_DATE=models.CharField(max_length=14,default='',blank=True)      # opt. 14 char MM/DD/YY
+    PH1_SCHED_DLVRY_DATE=models.CharField(max_length=14,default='',blank=True)    # opt. 14 char MM/DD/YY
+    PH1_EARLIEST_DLVRY_TIME=models.CharField(max_length=4,default='',blank=True)  # opt. 4 char 1200??
+    PH1_SCHED_DLVRY_DATE_END=models.CharField(max_length=10,default='',blank=True)# opt. 14 char MM/DD/YY
+    PH1_RTE_GUIDE_NBR=models.CharField(max_length=10,default='',blank=True)       # opt. 10 char
+    PH1_CUST_RTE=models.CharField(max_length=1,default='',blank=True)             # opt. 1 char (Y,N)
+    PH1_RTE_ATTR=models.CharField(max_length=30,default='',blank=True)            # opt. 30 char
+    PH1_RTE_ID=models.CharField(max_length=10,default='',blank=True)              # opt. 10 char
+    PH1_RTE_STOP_SEQ=models.CharField(max_length=5,default='',blank=True)         # opt. 5 char
+    PH1_RTE_TO=models.CharField(max_length=10,default='',blank=True)              # opt. 10 char
+    PH1_RTE_TYPE_1=models.CharField(max_length=2,default='',blank=True)           # opt. 2 char
+    PH1_RTE_TYPE_2=models.CharField(max_length=2,default='',blank=True)           # opt. 2 char
+    PH1_RTE_ZIP=models.CharField(max_length=11,default='',blank=True)             # opt. 11 char
+    PH1_RTE_SWC_NBR=models.CharField(max_length=10,default='',blank=True)         # opt. 10 char
+    PH1_CONSOL_NBR=models.CharField(max_length=10,default='',blank=True)          # opt. 10 char
+    PH1_TOTAL_DLRS_UNDISC=models.CharField(max_length=11,default='',blank=True)   # opt. 11 char
+    PH1_TOTAL_DLRS_DISC=models.CharField(max_length=11,default='',blank=True)     # opt. 11 char
+    PH1_CURR_CODE=models.CharField(max_length=10,default='',blank=True)           # opt. 10 char
+    PH1_PROD_VALUE=models.CharField(max_length=11,default='',blank=True)          # opt. 11 char
+    PH1_FREIGHT_TERMS=models.CharField(max_length=1,default='',blank=True)        # opt. 1 char 0 = Prepaid (Default),1 = Collect Billing,1 0:1,2 = Consignee Billing.3 = Third Party Billing
+    PH1_MARK_FOR=models.CharField(max_length=25,default='',blank=True)            # opt. 25 char
+    PH1_INCO_TERMS=models.CharField(max_length=3,default='',blank=True)           # opt. 3 char
+    PH1_BILL_ACCT_NBR=models.CharField(max_length=10,default='',blank=True)       # opt. 10 char
+    PH1_COD_FUNDS=models.CharField(max_length=1,default='',blank=True)            # OPT. 1 CHAR
+    PH1_INTL_GOODS_DESC=models.CharField(max_length=35,default='',blank=True)     # opt. 35 char
     # PHI
-    PHI_REC_TYPE='PHI'                  # 3 char
-    PHI_SPL_INSTR_NBR=''                # 3 char
-    PHI_SPL_INSTR_TYPE=''               # 2 char
-    PHI_SPL_INSTR_CODE=[]               # 2 char list from: (01=shipment,02=delivery,04=exception,08=delivery failure)
-    PHI_SPL_INSTR_DESC=''               # 135 char
-    PHI_PKT_PROFILE_ID=''               # 10 char
-#     # For Debugging 
-#     REC_TYPE='PH'                   # 2 char
-#     WHSE='WHSE'                         # 3 char
-#     CO='CO'                           # 10 char
-#     DIV='DIV'                          # 10 char
-#     STAT_CODE='10'                  # 2 char
-#     PKT_PROFILE_ID='PKT_PROFILE_ID'               # 10 char
-#     PKT_CTRL_NBR='PKT_CTRL_NBR'                 # 10 char
-#     PKT_NBR='PKT_NBR'                          # opt. 11 char
-#     PKT_SFX='PKT_SFX'                          # opt. 3 char
-#     ORD_NBR='ORD_NBR'                          # opt. 3 char
-#     ORD_SFX='ORD_SFX'                          # opt. 3 char
-#     ORD_TYPE='ORD_TYPE'                         #opt. 2 char
-#     SHIPTO='SHIPTO'                           # opt 10 char
-#     SHIPTO_NAME='SHIPTO_NAME'                  # 35 characters
-#     SHIPTO_CONTACT=''               # 30 characters
-#     SHIPTO_ADDR_1='SHIPTO_ADDR_1'                    # opt. 75 char
-#     SHIPTO_ADDR_2='SHIPTO_ADDR_2'                    # opt. 75 char
-#     SHIPTO_ADDR_3='SHIPTO_ADDR_3'                    # opt. 75 char
-#     SHIPTO_CITY='SHIPTO_CITY'                      # opt. 40 char
-#     SHIPTO_STATE='SHIPTO_STATE'                     # opt. 3 char
-#     SHIPTO_ZIP='SHIPTO_ZIP'                       # opt. 11 char
-#     SHIPTO_CNTRY='SHIPTO_CNTRY'                     # opt. 4 char
-#     TEL_NBR='TEL_NBR'                          # opt. 15 char
-#     SOLDTO='SOLDTO'                           # opt. 10 char
-#     SOLDTO_NAME='SOLDTO_NAME'                      # opt. 35 char
-#     SOLDTO_ADDR_1='SOLDTO_ADDR_1'                    # opt. 75 char
-#     SOLDTO_ADDR_2='SOLDTO_ADDR_2'                    # opt. 75 char
-#     SOLDTO_ADDR_3='SOLDTO_ADDR_3'                    # opt. 75 char
-#     SOLDTO_CITY='SOLDTO_CITY'                      # opt. 40 char
-#     SOLDTO_STATE='SOLDTO_STATE'                     # opt. 3 char
-#     SOLDTO_ZIP='SOLDTO_ZIP'                       # opt. 11 char
-#     SOLDTO_CNTRY='SOLDTO_CNTRY'                     # opt. 4 char
-#     SHIP_VIA='SHIP_VIA'                     # opt. 4 char (Surepost=UUS2, UPS grnd=UU10)
-#     CARTON_LABEL_TYPE='CARTON_LABEL_TYPE'                # opt. 3 char
-#     NBR_OF_LABEL='NBR_OF_LABEL'                     # opt. 3 char
-#     CONTNT_LABEL_TYPE='CONTNT_LABEL_TYPE'                # opt. 3 char
-#     NBR_OF_CONTNT_LABEL='NBR_OF_CONTNT_LABEL'              # opt. 3 char
-#     NBR_OF_PAKING_SLIPS='NPS'              # opt. 3 char
-#     PACK_SLIP_TYPE='PACK_SLIP_TYPE'                   # opt. 2 char
-#     LANG_ID='LANG_ID'                          # opt. 3 char
-#                                         # opt. PH1 section
-#     # PH1 section
-#     PH1_REC_TYPE='PH1'               # 2 char
-#     PH1_ACCT_RCVBL_ACCT_NBR='ACTREC_NBR'          # opt. 10 char
-#     PH1_ACCT_RCVBL_CODE=''              # opt. 2 char
-#     PH1_CUST_PO_NBR=''                  # opt. 26 char
-#     PH1_PRTY_CODE=''                    # opt. 2 char
-#     PH1_PRTY_SFX=''                     # opt. 2 char
-#     PH1_ORD_DATE=''                     # opt. 14 char MM/DD/YY
-#     PH1_START_SHIP_DATE=''              # opt. 14 char MM/DD/YY
-#     PH1_STOP_SHIP_DATE=''               # opt. 14 char MM/DD/YY
-#     PH1_SCHED_DLVRY_DATE=''             # opt. 14 char MM/DD/YY
-#     PH1_EARLIEST_DLVRY_TIME=''          # opt. 4 char 1200??
-#     PH1_SCHED_DLVRY_DATE_END=''         # opt. 14 char MM/DD/YY
-#     PH1_RTE_GUIDE_NBR=''                # opt. 10 char
-#     PH1_CUST_RTE=''                     # opt. 1 char (Y,N)
-#     PH1_RTE_ATTR=''                     # opt. 30 char
-#     PH1_RTE_ID=''                       # opt. 10 char
-#     PH1_RTE_STOP_SEQ=''                 # opt. 5 char
-#     PH1_RTE_TO=''                       # opt. 10 char
-#     PH1_RTE_TYPE_1=''                   # opt. 2 char
-#     PH1_RTE_TYPE_2=''                   # opt. 2 char
-#     PH1_RTE_ZIP=''                      # opt. 11 char
-#     PH1_RTE_SWC_NBR=''                  # opt. 10 char
-#     PH1_CONSOL_NBR=''                   # opt. 10 char
-#     PH1_TOTAL_DLRS_UNDISC=''            # opt. 11 char
-#     PH1_TOTAL_DLRS_DISC=''              # opt. 11 char
-#     PH1_CURR_CODE=''                    # opt. 10 char
-#     PH1_PROD_VALUE=''                   # opt. 11 char
-#     PH1_FREIGHT_TERMS=''                # opt. 1 char 0 = Prepaid (Default),1 = Collect Billing,1 0:1,2 = Consignee Billing.3 = Third Party Billing
-#     PH1_MARK_FOR=''                     # opt. 25 char
-#     PH1_INCO_TERMS=''                   # opt. 3 char
-#     PH1_BILL_ACCT_NBR=''                # opt. 10 char
-#     PH1_COD_FUNDS=''                    # OPT. 1 CHAR
-#     PH1_INTL_GOODS_DESC=''              # opt. 35 char
-#                                         # opt. PH2 section
-#                                         # opt. PH3 section
-#     PHI_REC_TYPE='PHI'                  # 3 char
-#     PHI_SPL_INSTR_NBR=''                # 3 char
-#     PHI_SPL_INSTR_TYPE=''               # 2 char
-#     PHI_SPL_INSTR_CODE=''               # 2 char (01=shipment,02=delivery,04=exception,08=delivery failure)
-#     PHI_SPL_INSTR_DESC=''               # 135 char
-#     PHI_PKT_PROFILE_ID=''               # 10 char
-    PD=[]                           # holds detail loop items
+    PHI_REC_TYPEE=models.CharField(max_length=3,default='PHI')                   # 3 char
+    PHI_SPL_INSTR_NBR=models.CharField(max_length=3,default='')                  # 3 char
+    PHI_SPL_INSTR_TYPE=models.CharField(max_length=2,default='')                 # 2 char
+    PHI_SPL_INSTR_CODE=models.CommaSeparatedIntegerField(max_length=2,default='08')# 2 char list from: (01=shipment,02=delivery,04=exception,08=delivery failure)
+    PHI_SPL_INSTR_DESC=models.CharField(max_length=135,default='')               # 135 char
+    PHI_PKT_PROFILE_ID=models.CharField(max_length=10,default='')                # 10 char
 
-    def __init__(self, params={}):
-        '''
-        Constructor
-        '''
-        super(UPS_PH,self).__init__()
-        self.PD=[] # need to create this here rather than use a default value in instance var init section
-        if isinstance(params,dict):
-            for key,value in params.iteritems():
-                if key == 'SEP':
-                    self.SEP=value
-                if key == 'filename':
-                    self.filename=value
-                if key == 'fileLineNo':
-                    self.fileLineNo=value
-                # PH
-                if key == 'REC_TYPE':
-                    self.REC_TYPE=value[:3]
-                if key == 'WHSE':
-                    self.WHSE=value[:3]
-                if key == 'CO':
-                    self.CO=value[:10]
-                if key == 'DIV':
-                    self.DIV=value[:10]
-                if key == 'STAT_CODE':
-                    self.STAT_CODE=value[:2]
-                if key == 'PKT_PROFILE_ID':
-                    self.PKT_PROFILE_ID=value[:10]
-                if key == 'PKT_CTRL_NBR':
-                    self.PKT_CTRL_NBR=value[:10]
-                if key == 'PKT_NBR':
-                    self.PKT_NBR=value[:11]
-                if key == 'PKT_SFX':
-                    self.PKT_SFX=value[:3]
-                if key == 'ORD_NBR':
-                    self.ORD_NBR=value[:8]
-                if key == 'ORD_SFX':
-                    self.ORD_SFX=value[:3]
-                if key == 'ORD_TYPE':
-                    self.ORD_TYPE=value[:2]
-                if key == 'SHIPTO':
-                    self.SHIPTO=value[:10]
-                if key == 'SHIPTO_NAME':
-                    self.SHIPTO_NAME=value[:35]
-                if key == 'SHIPTO_CONTACT':
-                    self.SHIPTO_CONTACT=value[:30]
-                if key == 'SHIPTO_ADDR_1':
-                    self.SHIPTO_ADDR_1=value[:75]
-                if key == 'SHIPTO_ADDR_2':
-                    self.SHIPTO_ADDR_2=value[:75]
-                if key == 'SHIPTO_ADDR_3':
-                    self.SHIPTO_ADDR_3=value[:75]
-                if key == 'SHIPTO_CITY':
-                    self.SHIPTO_CITY=value[:40]
-                if key == 'SHIPTO_STATE':
-                    self.SHIPTO_STATE=value[:3]
-                if key == 'SHIPTO_ZIP':
-                    self.SHIPTO_ZIP=value[:11]
-                if key == 'SHIPTO_CNTRY':
-                    self.SHIPTO_CNTRY=value[:4]
-                if key == 'TEL_NBR':
-                    self.TEL_NBR=value[:15]
-                if key == 'SOLDTO':
-                    self.SOLDTO=value[:10]
-                if key == 'SOLDTO_NAME':
-                    self.SOLDTO_NAME=value[:35]
-                if key == 'SOLDTO_ADDR_1':
-                    self.SOLDTO_ADDR_1=value[:75]
-                if key == 'SOLDTO_ADDR_2':
-                    self.SOLDTO_ADDR_2=value[:75]
-                if key == 'SOLDTO_ADDR_3':
-                    self.SOLDTO_ADDR_3=value[:75]
-                if key == 'SOLDTO_CITY':
-                    self.SOLDTO_CITY=value[:40]
-                if key == 'SOLDTO_STATE':
-                    self.SOLDTO_STATE=value[:3]
-                if key == 'SOLDTO_ZIP':
-                    self.SOLDTO_ZIP=value[:11]
-                if key == 'SOLDTO_CNTRY':
-                    self.SOLDTO_CNTRY=value[:4]
-                if key == 'SHIP_VIA':
-                    self.SHIP_VIA=value[:4]
-                if key == 'CARTON_LBL_TYPE':
-                    self.CARTON_LABEL_TYPE=value[:3]
-                if key == 'NBR_OF_LABEL':
-                    self.NBR_OF_LABEL=value[:3]
-                if key == 'CONTNT_LABEL_TYPE':
-                    self.CONTNT_LABEL_TYPE=value[:3]
-                if key == 'NBR_CONTNT_LABEL':
-                    self.NBR_OF_CONTNT_LABEL=value[:3]
-                if key == 'NBR_OF_PKNG_SLIPS':
-                    self.NBR_OF_PAKING_SLIPS=value[:3]
-                if key == 'PACK_SLIP_TYPE':
-                    self.PACK_SLIP_TYPE=value[:2]
-                if key == 'LANG_ID':
-                    self.LANG_ID=value[:3]
-                # PH1
-                if key == 'PH1_REC_TYPE':
-                    self.PH1_REC_TYPE=value[:3]
-                if key == 'PH1_ACCT_RCVBL_ACCT_NBR':
-                    self.PH1_ACCT_RCVBL_ACCT_NBR=value[:10]
-                if key == 'PH1_ACCT_RCVBL_CODE':
-                    self.PH1_ACCT_RCVBL_CODE=value[:2]
-                if key == 'PH1_CUST_PO_NBR':
-                    self.PH1_CUST_PO_NBR=value[:26]
-                if key == 'PH1_PRTY_CODE':
-                    self.PH1_PRTY_CODE=value[:2]
-                if key == 'PH1_PRTY_SFX':
-                    self.PH1_PRTY_SFX=value[:2]
-                if key == 'PH1_ORD_DATE':
-                    self.PH1_ORD_DATE=value[:14]
-                if key == 'PH1_START_SHIP_DATE':
-                    self.PH1_START_SHIP_DATE=value[:14]
-                if key == 'PH1_STOP_SHIP_DATE':
-                    self.PH1_STOP_SHIP_DATE=value[:14]
-                if key == 'PH1_SCHED_DLVRY_DATE':
-                    self.PH1_SCHED_DLVRY_DATE=value[:14]
-                if key == 'PH1_EARLIEST_DLVRY_TIME':
-                    self.PH1_EARLIEST_DLVRY_TIME=value[:4]
-                if key == 'PH1_SCHED_DLVRY_DATE_END':
-                    self.PH1_SCHED_DLVRY_DATE_END=value[:14]
-                if key == 'PH1_RTE_GUIDE_NBR':
-                    self.PH1_RTE_GUIDE_NBR=value[:10]
-                if key == 'PH1_CUST_RTE':
-                    self.PH1_CUST_RTE=value[:1]
-                if key == 'PH1_RTE_ATTR':
-                    self.PH1_RTE_ATTR=value[:30]
-                if key == 'PH1_RTE_ID':
-                    self.PH1_RTE_ID=value[:10]
-                if key == 'PH1_RTE_STOP_SEQ':
-                    self.PH1_RTE_STOP_SEQ=value[:5]
-                if key == 'PH1_RTE_TO':
-                    self.PH1_RTE_TO=value[:10]
-                if key == 'PH1_RTE_TYPE_1':
-                    self.PH1_RTE_TYPE_1=value[:2]
-                if key == 'PH1_RTE_TYPE_2':
-                    self.PH1_RTE_TYPE_2=value[:2]
-                if key == 'PH1_RTE_ZIP':
-                    self.PH1_RTE_ZIP=value[:11]
-                if key == 'PH1_RTE_SWC_NBR':
-                    self.PH1_RTE_SWC_NBR=value[:10]
-                if key == 'PH1_CONSOL_NBR':
-                    self.PH1_CONSOL_NBR=value[:10]
-                if key == 'PH1_TOTAL_DLRS_UNDISC':
-                    self.PH1_TOTAL_DLRS_UNDISC=value[:11]
-                if key == 'PH1_TOTAL_DLRS_DISC':
-                    self.PH1_TOTAL_DLRS_DISC=value[:11]
-                if key == 'PH1_CURR_CODE':
-                    self.PH1_CURR_CODE=value[:10]
-                if key == 'PH1_PROD_VALUE':
-                    self.PH1_PROD_VALUE=value[:11]
-                if key == 'PH1_FREIGHT_TERMS':
-                    self.PH1_FREIGHT_TERMS=value[:1]
-                if key == 'PH1_MARK_FOR':
-                    self.PH1_MARK_FOR=value[:25]
-                if key == 'PH1_INCO_TERMS':
-                    self.PH1_INCO_TERMS=value[:3]
-                if key == 'PH1_BILL_ACCT_NBR':
-                    self.PH1_BILL_ACCT_NBR=value[:10]
-                if key == 'PH1_COD_FUNDS':
-                    self.PH1_COD_FUNDS=value[:1]
-                if key == 'PH1_INTL_GOODS_DESC':
-                    self.PH1_INTL_GOODS_DESC=value[:35]
-                #PHI
-                if key == 'PHI_REC_TYPE':
-                    self.PHI_REC_TYPE=value[:3]
-                if key == 'PHI_SPL_INSTR_NBR':
-                    self.PHI_SPL_INSTR_NBR=value[:3]
-                if key == 'PHI_SPL_INSTR_TYPE':
-                    self.PHI_SPL_INSTR_TYPE=value[:2]
-                if key == 'PHI_SPL_INSTR_CODE':
-                    self.PHI_SPL_INSTR_CODE=value[:2]
-                if key == 'PHI_SPL_INSTR_DESC':
-                    self.PHI_SPL_INSTR_DESC=value[:135]
-                if key == 'PHI_PKT_PROFILE_ID':
-                    self.PHI_PKT_PROFILE_ID=value[:10]
-                #PD
-                if key == 'PD':
-                    self.PD=value # List of UPS_PD objects
-                
-        else:
-            raise TypeError("Invalid data type passed to UPS_PH __init__.  Should be a dictionary\n")
+
+
     
-    def __str__(self):
-        return 'UPS_PH instance ['+self.PKT_CTRL_NBR+']'
+    def __unicode__(self):
+        return 'PH instance ['+self.PKT_CTRL_NBR+']'
     
-    def parse(self,phItem):
-        self.fromFile=phItem.fromFile
-        self.fileLineNo=phItem.fileLineNo
-        if phItem.type == 'Mirai':
-            try:
-                self.PH1_ORD_DATE=phItem.v_date_purchased[:10]
-                self.PH1_START_SHIP_DATE=phItem.v_date_purchased[:10]
-                self.PH1_START_SHIP_DATE=phItem.v_date_purchased[:10]
-                self.PH1_CUST_PO_NBR=phItem.v_orders_id
-                self.TEL_NBR=phItem.v_customers_telephone
-                self.SHIPTO_CONTACT=phItem.v_customers_email_address
-                self.SHIPTO=phItem.v_customers_name
-                self.SHIPTO_NAME=phItem.v_customers_name
-                self.SHIPTO_ADDR_1=phItem.v_customers_street_address
-                self.SHIPTO_ADDR_2=phItem.v_customers_suburb
-                self.SHIPTO_CITY=phItem.v_customers_city
-                self.SHIPTO_ZIP=phItem.v_customers_postcode
-                self.SHIPTO_CNTRY=phItem.v_customers_country
-                self.ORD_TYPE='ZE'
-                self.SHIP_VIA=self.parse_ship_via('none')
-            except:
-                return(-1)
-        if phItem.type == 'Amazon':
-            try:
-                self.PH1_ORD_DATE=phItem.purchase_date[:10]
-                self.PH1_START_SHIP_DATE=phItem.purchase_date[:10]
-                self.PH1_START_SHIP_DATE=phItem.purchase_date[:10]
-                self.PH1_CUST_PO_NBR=phItem.order_id
-                self.TEL_NBR=phItem.buyer_phone_number
-                self.SHIPTO_CONTACT=phItem.buyer_email
-                self.SHIPTO_NAME=phItem.recipient_name
-                self.SHIPTO_ADDR_1=phItem.ship_address_1
-                self.SHIPTO_ADDR_2=phItem.ship_address_2
-                self.SHIPTO_CITY=phItem.ship_city
-                self.SHIPTO_STATE=phItem.ship_state
-                self.SHIPTO_ZIP=phItem.ship_postal_code
-                self.SHIPTO_CNTRY=phItem.ship_country
-                self.ORD_TYPE='AM'
-                self.SHIP_VIA=self.parse_ship_via(phItem.ship_service_level)
-                self.PHI_SPL_INSTR_DESC=phItem.buyer_email
-            except:
-                return(-1)
-        if phItem.type == 'ShipStation':
-            try:
-                self.PH1_ORD_DATE=phItem.purchase_date[:10]
-                self.PH1_START_SHIP_DATE=phItem.purchase_date[:10]
-                self.PH1_START_SHIP_DATE=phItem.purchase_date[:10]
-                self.PH1_CUST_PO_NBR=phItem.order_id
-                self.SHIPTO_NAME=phItem.recipient_name
-                self.SHIPTO_ADDR_1=phItem.ship_address_1
-                self.SHIPTO_ADDR_2=phItem.ship_address_2
-                self.SHIPTO_ADDR_3=phItem.ship_address_3
-                self.SHIPTO_CITY=phItem.ship_city
-                self.SHIPTO_STATE=phItem.ship_state
-                self.SHIPTO_ZIP=phItem.ship_postal_code
-                self.SHIPTO_CNTRY=phItem.ship_country
-                self.PACK_SLIP_TYPE=phItem.pack_slip_type
-                self.CARRIER=phItem.carrier
-                self.ORD_TYPE=phItem.order_type[:2]
-                self.SHIP_VIA=self.parse_ship_via(phItem.ship_service_level)
-                self.PHI_SPL_INSTR_DESC=phItem.buyer_email
-            except:
-                return(-1)
+    def parse(self,coLine):
+        try:
+            self.PH1_ORD_DATE=coLine.purchaseDate[:10]
+            self.PH1_START_SHIP_DATE=coLine.purchaseDate[:10]
+            self.PH1_CUST_PO_NBR=coLine.orderId
+            self.SHIPTO_NAME=coLine.shipToName
+            self.SHIPTO_ADDR_1=coLine.shipToAddress1
+            self.SHIPTO_ADDR_2=coLine.shipToAddress2
+            self.SHIPTO_ADDR_3=coLine.shipToAddress3
+            self.SHIPTO_CITY=coLine.shipToCity
+            self.SHIPTO_STATE=coLine.shipToState
+            self.SHIPTO_ZIP=coLine.shipToZip
+            self.SHIPTO_CNTRY=coLine.shipToCntry
+            self.PACK_SLIP_TYPE=coLine.packSlipType
+            self.CARRIER=coLine.carrier
+            self.ORD_TYPE=coLine.orderType[:2]
+            self.SHIP_VIA=self.parse_ship_via(coLine.serviceLevel)
+            self.PHI_SPL_INSTR_DESC=coLine.buyerEmail
+        except:
+            return(-1)
         return(0)
     
     def parse_ship_via(self,shipVia):
@@ -840,38 +450,20 @@ class UPS_PH(models.Model):
             return('UUSP')
         else:
             return('UUSP')
-    
-    def add_mirai_detail(self,phItem,index):
-        pd=UPS_PD({'CUST_SKU':phItem.v_products_model,
-                   'SIZE_DESC':phItem.v_products_name[:15],
-                   'ORIG_ORD_QTY':'1',
-                   'PKT_SEQ_NBR':'{:09}'.format(index),
-                   'STAT_CODE':'00',
-                   'fileLineNo':phItem.fileLineNo,
-                   'filename':phItem.filename})
-        self.PD.append(pd)
-    
-    def add_amazon_detail(self,phItem,index):
-        pd=UPS_PD({'CUST_SKU':phItem.sku,
-                   'SIZE_DESC':phItem.product_name[:15],
-                   'ORIG_ORD_QTY':phItem.quantity_purchased,
-                   'ORIG_PKT_QTY':phItem.quantity_purchased,
-                   'PKT_SEQ_NBR':'{:09}'.format(index),
-                   'STAT_CODE':'00',
-                   'fileLineNo':phItem.fileLineNo,
-                   'filename':phItem.filename})
-        self.PD.append(pd)
-    
-    def add_ss_detail(self,phItem,index):
-        pd=UPS_PD({'CUST_SKU':phItem.sku,
-                   'SIZE_DESC':phItem.product_name[:15],
-                   'ORIG_ORD_QTY':phItem.quantity_purchased,
-                   'ORIG_PKT_QTY':phItem.quantity_purchased,
-                   'PKT_SEQ_NBR':'{:09}'.format(index),
-                   'STAT_CODE':'00',
-                   'fileLineNo':phItem.fileLineNo,
-                   'filename':phItem.filename})
-        self.PD.append(pd)
+    def add_detail(self,index,coLine):
+        pdItem=PD()
+        pdItem.CUST_SKU=coLine.sku
+        pdItem.SIZE_DESC=coLine.productName
+        pdItem.ORIG_ORD_QTY=coLine.quantity
+        pdItem.ORIG_PKT_QTY=coLine.quantity
+        pdItem.PKT_SEQ_NBR='{:09}'.format(index)
+        pdItem.STAT_CODE='00'
+        lineError=pdItem.check_line()
+        if lineError != '':
+            # some missing information in this line item, generate an error
+            coLine.parseError.append(lineError)
+            coLine.save()
+        pdItem.save()
     
     def check_line(self):
         errorLine=''
@@ -950,126 +542,45 @@ class UPS_PH(models.Model):
             phItem+=pdItem.pd_item(self.CO,self.DIV)+os.linesep
         return(phItem)
 
-class UPS_PD(models.Model):
+class PD(models.Model):
     '''
-    UPS Detail Loop, contained in a UPS_PH (Pickticket loop)
+    UPS Detail Loop, contained in a PH (Pickticket loop)
     '''
-    SEP='|' # record separator
-    fileLineNo=0
-    ph=models.ForeignKey(UPS_PH)
-    filename=''
+    SEP=models.CharField(max_length=1,default='|') # record separator
+    ups_ph=models.ForeignKey(PH)
     
     # PD section
     # key for PD hash tables is PKT_SEQ_NBR
-    REC_TYPE='PD'                   # 2 char
-    PKT_SEQ_NBR=''                  # 9 char
-    STAT_CODE=''                    # 2 char
-    PKT_PROFILE_ID=''                   # opt. 2 char
-    SEASON=''                           # opt. 2 char
-    SEASON_YR=''                        # opt. 2 char
-    STYLE=''                            # opt. 8 char
-    STYLE_SFX=''                        # opt. 8 char
-    COLOR=''                            # opt. 4 char
-    COLOR_SFX=''                        # opt. 2 char
-    SEC_DIM=''                          # opt. 3 char
-    QUAL=''                             # opt. 1 char
-    SIZE_RANGE_CODE=''                  # opt. 4 char
-    SIZE_REL_POSN_IN_TABLE=''           # opt. 2 char
-    SIZE_DESC=''                        # opt. 15 char
-    ORIG_ORD_QTY=''                 # 9 char
-    ORIG_PKT_QTY=''                 # 9 char
-    CANCEL_QTY=''                       # opt. 9 char
-    CUBE_MULT_QTY=''                    # opt. 9 char
-    BACK_ORD_QTY=''                     # opt. 9 char
-    CUST_SKU=''                         # opt. 20 char
-#     #For Debugging
-#     REC_TYPE='PD'                   # 2 char
-#     PKT_SEQ_NBR='PKT_SEQ_NBR'                  # 9 char
-#     STAT_CODE='STAT_CODE'                    # 2 char
-#     PKT_PROFILE_ID='PKT_PROFILE_ID'                   # opt. 2 char
-#     SEASON='SS'                           # opt. 2 char
-#     SEASON_YR='SY'                        # opt. 2 char
-#     STYLE='STYLE'                            # opt. 8 char
-#     STYLE_SFX='STLSFX'                        # opt. 8 char
-#     COLOR='COLR'                            # opt. 4 char
-#     COLOR_SFX='CS'                        # opt. 2 char
-#     SEC_DIM=''                          # opt. 3 char
-#     QUAL=''                             # opt. 1 char
-#     SIZE_RANGE_CODE=''                  # opt. 4 char
-#     SIZE_REL_POSN_IN_TABLE=''           # opt. 2 char
-#     SIZE_DESC=''                        # opt. 15 char
-#     ORIG_ORD_QTY=''                     # 9 char
-#     ORIG_PKT_QTY=''                     # 9 char
-#     CANCEL_QTY=''                       # opt. 9 char
-#     CUBE_MULT_QTY=''                    # opt. 9 char
-#     BACK_ORD_QTY=''                     # opt. 9 char
-#     CUST_SKU=''                         # opt. 20 char
+    REC_TYPE=models.CharField(max_length=2,default='PD')                       # 2 char
+    PKT_SEQ_NBR=models.CharField(max_length=9,default='')                      # 9 char
+    STAT_CODE=models.CharField(max_length=2,default='')                        # 2 char
+    PKT_PROFILE_ID=models.CharField(max_length=2,default='',blank=True)        # opt. 2 char
+    SEASON=models.CharField(max_length=2,default='',blank=True)                # opt. 2 char
+    SEASON_YR=models.CharField(max_length=2,default='',blank=True)             # opt. 2 char
+    STYLE=models.CharField(max_length=8,default='',blank=True)                 # opt. 8 char
+    STYLE_SFX=models.CharField(max_length=8,default='',blank=True)             # opt. 8 char
+    COLOR=models.CharField(max_length=4,default='',blank=True)                 # opt. 4 char
+    COLOR_SFX=models.CharField(max_length=2,default='',blank=True)             # opt. 2 char
+    SEC_DIM=models.CharField(max_length=3,default='',blank=True)               # opt. 3 char
+    QUAL=models.CharField(max_length=1,default='',blank=True)                  # opt. 1 char
+    SIZE_RANGE_CODE=models.CharField(max_length=4,default='',blank=True)       # opt. 4 char
+    SIZE_REL_POSN_IN_TABLE=models.CharField(max_length=4,default='',blank=True)# opt. 2 char
+    SIZE_DESC=models.CharField(max_length=15,default='',blank=True)            # opt. 15 char
+    ORIG_ORD_QTY=models.CharField(max_length=9,default='',blank=True)          # 9 char
+    ORIG_PKT_QTY=models.CharField(max_length=9,default='',blank=True)          # 9 char
+    CANCEL_QTY=models.CharField(max_length=9,default='',blank=True)            # opt. 9 char
+    CUBE_MULT_QTY=models.CharField(max_length=9,default='',blank=True)         # opt. 9 char
+    BACK_ORD_QTY=models.CharField(max_length=9,default='',blank=True)          # opt. 9 char
+    CUST_SKU=models.CharField(max_length=20,default='',blank=True)             # opt. 20 char
                                         # opt. PD1 section
                                         # opt. PD2 section
                                         # opt. PD3 section
                                         # opt. PDI section
 
-    def __init__(self, params={}):
-        '''
-        Constructor
-        '''
-        super(UPS_PD,self).__init__()
-        if isinstance(params,dict):
-            for key,value in params.iteritems():
-                if key == 'SEP':
-                    self.SEP=value
-                if key == 'fileLineNo':
-                    self.fileLineNo=value
-                if key == 'filename':
-                    self.filename=value
-                #PD
-                if key == 'REC_TYPE':
-                    self.REC_TYPE=value
-                if key == 'PKT_SEQ_NBR':
-                    self.PKT_SEQ_NBR=value
-                if key == 'STAT_CODE':
-                    self.STAT_CODE=value
-                if key == 'PKT_PROFILE_ID':
-                    self.PKT_PROFILE_ID=value
-                if key == 'SEASON':
-                    self.SEASON=value
-                if key == 'SEASON_YR':
-                    self.SEASON_YR=value
-                if key == 'STYLE':
-                    self.STYLE=value
-                if key == 'STYLE':
-                    self.STYLE_SFX=value
-                if key == 'COLOR':
-                    self.COLOR=value
-                if key == 'COLOR_SFX':
-                    self.COLOR_SFX=value
-                if key == 'SEC_DIM':
-                    self.SEC_DIM=value
-                if key == 'QUAL':
-                    self.QUAL=value
-                if key == 'SIZE_RANGE_CODE':
-                    self.SIZE_RANGE_CODE=value
-                if key == 'SIZE_REL_POSN_IN_TABLE':
-                    self.SIZE_REL_POSN_IN_TABLE=value
-                if key == 'SIZE_DESC':
-                    self.SIZE_DESC=value
-                if key == 'ORIG_ORD_QTY':
-                    self.ORIG_ORD_QTY=value
-                if key == 'ORIG_PKT_QTY':
-                    self.ORIG_PKT_QTY=value
-                if key == 'CANCEL_QTY':
-                    self.CANCEL_QTY=value
-                if key == 'CUBE_MULT_QTY':
-                    self.CUBE_MULT_QTY=value
-                if key == 'BACK_ORD_QTY':
-                    self.BACK_ORD_QTY=value
-                if key == 'CUST_SKU':
-                    self.CUST_SKU=value
-        else:
-            raise TypeError("Invalid data type passed to UPS_PD __init__.  Should be a dictionary\n")
+
     
-    def __str__(self):
-        return "UPS_PD instance"
+    def __unicode__(self):
+        return "PD instance"
     
     def pd_item(self,co,div):
         pdItem=''
@@ -1095,98 +606,90 @@ class UPS_PD(models.Model):
                 errorLine+='"Pickticket Sequence Number" missing, '
         return(errorLine)
     
-class SS_CO(models.Model):
+class CustOrder(models.Model):
     '''
-    Ship Station consolidated customer orders
-    Strive to maintain compatibility with Amazon_CO
+    UPS customer order line item
     '''
-    headers=[] # holds headers in order read from file
-    pkt=models.ForeignKey(UPS_PKT, null=True)
-    fromFile=models.URLField(default='')
-    fileLineNo=0
-    filename=models.URLField(default='')
-    type=models.CharField(max_length=20, default='ShipStation')
-    sku=models.CharField(max_length=50, default='')
-    product_name=models.CharField(max_length=100, default='')
-    order_id=models.CharField(max_length=50, default='')
-    order_type=models.CharField(max_length=50, default='')
-    quantity_purchased=models.IntegerField(default=0)
-    purchase_date=models.DateField()
-    ship_service_level=models.CharField(max_length=50, default='')
-    recipient_name=models.CharField(max_length=100, default='')
-    buyer_email=models.EmailField(max_length=254, default='')
-    # TODO: RG 09/09/14 add in address parser module
-    ship_address_1=models.CharField(max_length=200, default='')
-    ship_address_2=models.CharField(max_length=200, default='')
-    ship_address_3=models.CharField(max_length=200, default='')
-    ship_city=models.CharField(max_length=100, default='')
-    ship_state=models.CharField(max_length=20, default='')
-    ship_postal_code=models.CharField(max_length=20, default='')
-    ship_country=models.CharField(max_length=50, default='')
-    # Additional fields not used by Amazon
-    carrier=models.CharField(max_length=20, default='')
-    pack_slip_type=models.CharField(max_length=20, default='')
-    intl_terms_of_sale=models.CharField(max_length=100, default='')
     
-    def __init__(self, params={}):
-        '''
-        Constructor
-        '''
-        super(SS_CO,self).__init__()
-        if isinstance(params,dict):
-            for key,value in params.iteritems():
-                if key == 'headers':
-                    self.headers=value
-                if key == 'fileLineNo':
-                    self.fileLineNo=value
-                if key == 'filename':
-                    self.filename=value
-                if key == 'sku':
-                    self.sku=value
-                if key == 'product-name':
-                    self.product_name=value
-                if key == 'order-id':
-                    self.order_id=value
-                if key == 'order-type':
-                    self.order_type=value
-                if key == 'quantity-purchased':
-                    self.quantity_purchased=value
-                if key == 'purchase-date':
-                    self.purchase_date=value
-                if key == 'ship-service-level':
-                    self.ship_service_level=value
-                if key == 'recipient-name':
-                    self.recipient_name=value
-                if key == 'buyer-email':
-                    self.buyer_email=value
-                if key == 'ship-address-1':
-                    self.ship_address_1=value
-                if key == 'ship-address-2':
-                    self.ship_address_2=value
-                if key == 'ship-address-3':
-                    self.ship_address_3=value
-                if key == 'ship-city':
-                    self.ship_city=value
-                if key == 'ship-state':
-                    self.ship_state=value
-                if key == 'ship-postal-code':
-                    self.ship_postal_code=value
-                if key == 'ship-country':
-                    self.ship_country=value
-                if key == 'carrier':
-                    self.carrier=value
-                if key == 'pack-slip-type':
-                    self.pack_slip_type=value
-                if key == 'intl-terms-of-sale':
-                    self.intl_terms_of_sale=value
-        else:
-            raise TypeError("Invalid data type passed to SS_CO __init__.  Should be a dictionary\n")
+    headers=[] # holds headers in order read from file
+    sep=models.CharField(max_length=1,default='\t')
+    ups_pkt=models.ForeignKey(PickTicket, blank=True)
+    queryLineNo=models.IntegerField(default=0)
+    queryName=models.URLField(default='')
+    type=models.CharField(max_length=20, default='')
+    purchaseDate=models.DateField(blank=True)
+    orderId=models.CharField(max_length=50, default='')
+    shipToName=models.CharField(max_length=50, default='')
+    shipToAddress1=models.CharField(max_length=100, default='')
+    shipToAddress2=models.CharField(max_length=100, default='')
+    shipToAddress3=models.CharField(max_length=100, default='')
+    shipToCity=models.CharField(max_length=100,default='')
+    shipToState=models.CharField(max_length=100,default='')
+    shipToZip=models.CharField(max_length=100,default='')
+    shipToCntry=models.CharField(max_length=100,default='')
+    packSlipType=models.CharField(max_length=50,default='')
+    carrier=models.CharField(max_length=50,default='')
+    orderType=models.CharField(max_length=50,default='')
+    serviceLevel=models.CharField(max_length=50,default='')
+    buyerEmail=models.EmailField(max_length=254,default='')
+    sku=models.CharField(max_length=50,default='')
+    productName=models.CharField(max_length=100,default='')
+    quantity=models.IntegerField(default=0)
+    parseError=models.TextField(default='')
     
     def __unicode__(self):
-        return "SS_CO instance"
+        return 'CustOrder abstract class'
     
-    def read_line(self,line):
-        res=re.split(r'\t', line.rstrip())
+    def read_header(self,line):
+        self.headers=re.split(r'\t', line.rstrip())
+        
+    def read_zen_line(self,line):
+        self.type='Zen'
+        res=re.split(self.sep, line.rstrip())
+        if line[-2:-1]==self.sep:
+            res.append('')
+        if len(res) != len(self.headers):
+            return(-1) # improperly formatted line
+        for item in self.headers:
+            if item == 'v_date_purchased':
+                self.purchaseDate=res[self.headers.index(item)]
+            if item == 'v_orders_id':
+                self.orderId=res[self.headers.index(item)]
+            if item == 'v_customers_name':
+                self.shipToName=res[self.headers.index(item)]
+            if item == 'v_customers_street_address':
+                self.shipToAddress1=res[self.headers.index(item)]
+            if item == 'v_customers_suburb':
+                self.shipToAddress2=res[self.headers.index(item)]
+            if item == 'v_customers_city':
+                self.shipToCity=res[self.headers.index(item)]
+            if item == 'v_customers_postcode':
+                self.shipToZip=res[self.headers.index(item)]
+            if item == 'v_customers_country':
+                self.shipToCntry=res[self.headers.index(item)]
+            if item == 'v_customers_email_address':
+                self.buyerEmail=res[self.headers.index(item)]
+            if item == 'v_products_model':
+                self.sku=res[self.headers.index(item)]
+            if item == 'v_products_name':
+                self.productName=res[self.headers.index(item)]
+        #self.parse_zen_date()
+        return(0)
+        
+    def parse_zen_date(self):
+        #format: 2014-08-14 14:20:46
+        try:
+            pieces=re.split(r' ',self.purchaseDate)
+            ymd=re.split(r'-',pieces[0])
+            #drop off final number separated by a +/-.  Is it some GMT adder?
+            # doesn't seem to correlate with actual timesone of purchaser
+            self.purchaseDate=ymd[1]+'/'+ymd[2]+'/'+ymd[0]+' '+pieces[1]
+        except:
+            self.purchaseDate='00/00/00 00:00:00'
+    
+    def read_ss_line(self,line):
+        self.type='SS'
+        res=re.split(self.sep, line.rstrip())
         if len(res) != len(self.headers):
             # improperly formatted line
             if len(res) > len(self.headers):
@@ -1199,605 +702,103 @@ class SS_CO(models.Model):
             if item == 'sku':
                 self.sku=res[self.headers.index(item)]
             if item == 'product-name':
-                self.product_name=res[self.headers.index(item)]
+                self.productName=res[self.headers.index(item)]
             if item == 'order-id':
-                self.order_id=res[self.headers.index(item)]
+                self.orderId=res[self.headers.index(item)]
             if item == 'order-type':
-                self.order_type=res[self.headers.index(item)]
+                self.orderType=res[self.headers.index(item)]
             if item == 'quantity-purchased':
-                self.quantity_purchased=res[self.headers.index(item)]
+                self.quantity=res[self.headers.index(item)]
             if item == 'purchase-date':
-                self.purchase_date=res[self.headers.index(item)]
+                self.purchaseDate=res[self.headers.index(item)]
             if item == 'ship-service-level':
-                self.ship_service_level=res[self.headers.index(item)]
+                self.serviceLevel=res[self.headers.index(item)]
             if item == 'recipient-name':
-                self.recipient_name=res[self.headers.index(item)]
+                self.shipToName=res[self.headers.index(item)]
             if item == 'buyer-email':
-                self.buyer_email=res[self.headers.index(item)]
+                self.buyerEmail=res[self.headers.index(item)]
             if item == 'ship-address-1':
-                self.ship_address_1=res[self.headers.index(item)]
+                self.shipToAddress1=res[self.headers.index(item)]
             if item == 'ship-address-2':
-                self.ship_address_2=res[self.headers.index(item)]
+                self.shipToAddress2=res[self.headers.index(item)]
             if item == 'ship-address-3':
-                self.ship_address_3=res[self.headers.index(item)]
+                self.shipToddress3=res[self.headers.index(item)]
             if item == 'ship-city':
-                self.ship_city=res[self.headers.index(item)]
+                self.shipToCity=res[self.headers.index(item)]
             if item == 'ship-state':
-                self.ship_state=res[self.headers.index(item)]
+                self.shipToState=res[self.headers.index(item)]
             if item == 'ship-postal-code':
-                self.ship_postal_code=res[self.headers.index(item)]
+                self.shipToZip=res[self.headers.index(item)]
             if item == 'ship-country':
-                self.ship_country=res[self.headers.index(item)]
+                self.shipToCntry=res[self.headers.index(item)]
             if item == 'carrier':
                 self.carrier=res[self.headers.index(item)]
             if item == 'pack-slip-type':
-                self.pack_slip_type=res[self.headers.index(item)]
-            if item == 'intl-terms-of-sale':
-                self.intl_terms_of_sale=res[self.headers.index(item)]
+                self.packSlipType=res[self.headers.index(item)]
         return(0)
     
-    def read_header(self,line):
-        self.headers=re.split(r'\t', line.rstrip())
-    
-class Amazon_CO(models.Model):
-    '''
-    Amazon customer order
-    '''
-    headers=[] # holds headers in order read from file
-    pkt=models.ForeignKey(UPS_PKT, null=True)
-    fromFile=models.URLField(default='')
-    fileLineNo=0
-    filename=models.URLField(default='')
-    type=models.CharField(max_length=20, default='Amazon')
-    buyer_name=models.CharField(max_length=100, default='')
-    buyer_email=models.EmailField(max_length=254, default='')
-    sku=models.CharField(max_length=50, default='')
-    product_name=models.CharField(max_length=100, default='')
-    purchase_date=models.DateField()
-    payments_date=models.DateField()
-    order_id=models.CharField(max_length=50, default='')
-    order_item_id=models.CharField(max_length=50, default='')
-    external_order_id=models.CharField(max_length=50, default='')
-    quantity_purchased=models.IntegerField(default=0)
-    currency=models.CharField(max_length=50, default='')
-    item_price=models.DecimalField(max_digits=6, decimal_places=2, default=0)
-    item_promotion_discount=models.DecimalField(max_digits=6, decimal_places=2, default=0)
-    item_promotion_id=models.CharField(max_length=100, default='')
-    ship_promotion_discount=models.DecimalField(max_digits=6, decimal_places=2, default=0)
-    ship_promotion_id=models.CharField(max_length=100, default='')
-    item_tax=models.DecimalField(max_digits=6, decimal_places=2, default=0)
-    shipping_price=models.DecimalField(max_digits=6, decimal_places=2, default=0)
-    shipping_tax=models.DecimalField(max_digits=6, decimal_places=2, default=0)
-    ship_service_level=models.CharField(max_length=50, default='')
-    recipient_name=models.CharField(max_length=100, default='')
-    # TODO: RG 09/09/14 add in address parser module
-    ship_address_1=models.CharField(max_length=200, default='')
-    ship_address_2=models.CharField(max_length=200, default='')
-    ship_address_3=models.CharField(max_length=200, default='')
-    ship_city=models.CharField(max_length=200, default='')
-    ship_state=models.CharField(max_length=20, default='')
-    ship_postal_code=models.CharField(max_length=20, default='')
-    ship_country=models.CharField(max_length=20, default='')
-    ship_phone_number=models.CharField(max_length=50, default='')
-    delivery_start_date=models.DateField()
-    delivery_end_date=models.DateField()
-    delivery_time_zone=models.CharField(max_length=50, default='America/New_York')
-    delivery_Instructions=models.CharField(max_length=500, default='')
-    sales_channel=models.CharField(max_length=50, default='')
-    order_channel=models.CharField(max_length=50, default='')
-    order_channel_instance=models.CharField(max_length=50, default='')
-    tax_location_code=models.CharField(max_length=200, default='')
-    tax_location_city=models.CharField(max_length=200, default='')
-    tax_location_county=models.CharField(max_length=50, default='')
-    tax_location_state=models.CharField(max_length=20, default='')
-    per_unit_item_taxable_district=models.CharField(max_length=200, default='')
-    per_unit_item_taxable_city=models.CharField(max_length=200, default='')
-    per_unit_item_taxable_county=models.CharField(max_length=200, default='')
-    per_unit_item_taxable_state=models.CharField(max_length=20, default='')
-    per_unit_item_non_taxable_district=models.CharField(max_length=200, default='')
-    per_unit_item_non_taxable_city=models.CharField(max_length=200, default='')
-    per_unit_item_non_taxable_county=models.CharField(max_length=200, default='')
-    per_unit_item_non_taxable_state=models.CharField(max_length=20, default='')
-    per_unit_item_zero_rated_district=models.CharField(max_length=200, default='')
-    per_unit_item_zero_rated_city=models.CharField(max_length=200, default='')
-    per_unit_item_zero_rated_county=models.CharField(max_length=200, default='')
-    per_unit_item_zero_rated_state=models.CharField(max_length=20, default='')
-    per_unit_item_tax_collected_district=models.CharField(max_length=200, default='')
-    per_unit_item_tax_collected_city=models.CharField(max_length=200, default='')
-    per_unit_item_tax_collected_county=models.CharField(max_length=200, default='')
-    per_unit_item_tax_collected_state=models.CharField(max_length=20, default='')
-    per_unit_shipping_taxable_district=models.CharField(max_length=200, default='')
-    per_unit_shipping_taxable_city=models.CharField(max_length=200, default='')
-    per_unit_shipping_taxable_county=models.CharField(max_length=200, default='')
-    per_unit_shipping_taxable_state=models.CharField(max_length=20, default='')
-    per_unit_shipping_non_taxable_district=models.CharField(max_length=200, default='')
-    per_unit_shipping_non_taxable_city=models.CharField(max_length=200, default='')
-    per_unit_shipping_non_taxable_county=models.CharField(max_length=200, default='')
-    per_unit_shipping_non_taxable_state=models.CharField(max_length=20, default='')
-    per_unit_shipping_zero_rated_district=models.CharField(max_length=200, default='')
-    per_unit_shipping_zero_rated_city=models.CharField(max_length=200, default='')
-    per_unit_shipping_zero_rated_county=models.CharField(max_length=200, default='')
-    per_unit_shipping_zero_rated_state=models.CharField(max_length=20, default='')
-    per_unit_shipping_tax_collected_district=models.CharField(max_length=200, default='')
-    per_unit_shipping_tax_collected_state=models.CharField(max_length=20, default='')
-    per_unit_shipping_tax_collected_county=models.CharField(max_length=200, default='')
-    per_unit_shipping_tax_collected_state=models.CharField(max_length=200, default='')
-
-    def __init__(self, params={}):
-        '''
-        Constructor
-        '''
-        super(Amazon_CO,self).__init__()
-        if isinstance(params,dict):
-            for key,value in params.iteritems():
-                if key == 'headers':
-                    self.headers=value
-                if key == 'fileLineNo':
-                    self.fileLineNo=value
-                if key == 'filename':
-                    self.filename=value
-                if key == 'buyer-name':
-                    self.buyer_name=value
-                if key == 'buyer-phone-number':
-                    self.buyer_phone_number=value
-                if key == 'buyer-email':
-                    self.buyer_email=value
-                if key == 'sku':
-                    self.sku=value
-                if key == 'product-name':
-                    self.product_name=value
-                if key == 'purchase-date':
-                    self.purchase_date=value
-                if key == 'payments-date':
-                    self.payments_date=value
-                if key == 'order-id':
-                    self.order_id=value
-                if key == 'order-item-id':
-                    self.order_item_id=value
-                if key == 'external-order-id':
-                    self.external_order_id=value
-                if key == 'quantity-purchased':
-                    self.quantity_purchased=value
-                if key == 'currency':
-                    self.currency=value
-                if key == 'item-price':
-                    self.item_price=value
-                if key == 'item-promotion-discount':
-                    self.item_promotion_discount=value
-                if key == 'item-promotion-id':
-                    self.item_promotion_id=value
-                if key == 'ship-promotion-discount':
-                    self.ship_promotion_discount=value
-                if key == 'ship-promotion-id':
-                    self.ship_promotion_id=value
-                if key == 'item-tax':
-                    self.item_tax=value
-                if key == 'shipping-price':
-                    self.shipping_price=value
-                if key == 'shipping-tax':
-                    self.shipping_tax=value
-                if key == 'ship-service-level':
-                    self.ship_service_level=value
-                if key == 'recipient-name':
-                    self.recipient_name=value
-                if key == 'ship-address-1':
-                    self.ship_address_1=value
-                if key == 'ship-address-2':
-                    self.ship_address_2=value
-                if key == 'ship-address-3':
-                    self.ship_address_3=value
-                if key == 'ship-city':
-                    self.ship_city=value
-                if key == 'ship-state':
-                    self.ship_state=value
-                if key == 'ship-postal-code':
-                    self.ship_postal_code=value
-                if key == 'ship-country':
-                    self.ship_country=value
-                if key == 'ship-phone-number':
-                    self.ship_phone_number=value
-                if key == 'delivery-start-date':
-                    self.delivery_start_date=value
-                if key == 'delivery-end-date':
-                    self.delivery_end_date=value
-                if key == 'delivery-time-zone':
-                    self.delivery_time_zone=value
-                if key == 'delivery-instructions':
-                    self.delivery_Instructions=value
-                if key == 'sales-channel':
-                    self.sales_channel=value
-                if key == 'order-channel':
-                    self.order_channel=value
-                if key == 'order-channel-instance':
-                    self.order_channel_instance=value
-                if key == 'tax-location-code':
-                    self.tax_location_code=value
-                if key == 'tax-location-city':
-                    self.tax_location_city=value
-                if key == 'tax-location-county':
-                    self.tax_location_county=value
-                if key == 'tax-location-state':
-                    self.tax_location_state=value
-                if key == 'per-unit-item-taxable-district':
-                    self.per_unit_item_taxable_district=value
-                if key == 'per-unit-item-taxable-city':
-                    self.per_unit_item_taxable_city=value
-                if key == 'per-unit-item-taxable-county':
-                    self.per_unit_item_taxable_county=value
-                if key == 'per-unit-item-taxable-state':
-                    self.per_unit_item_taxable_state=value
-                if key == 'per-unit-item-non_taxable-district':
-                    self.per_unit_item_non_taxable_district=value
-                if key == 'per-unit-item-non_taxable-city':
-                    self.per_unit_item_non_taxable_city=value
-                if key == 'per-unit-item-non_taxable-county':
-                    self.per_unit_item_non_taxable_county=value
-                if key == 'per-unit-item-non_taxable-state':
-                    self.per_unit_non_item_taxable_state=value
-                if key == 'per-unit-item-zero-rated-district':
-                    self.per_unit_item_zero_rated_district=value
-                if key == 'per-unit-item-zero-rated-city':
-                    self.per_unit_item_zero_rated_city=value
-                if key == 'per-unit-item-zero-rated-county':
-                    self.per_unit_item_zero_rated_county=value
-                if key == 'per-unit-item-zero-rated-state':
-                    self.per_unit_item_zero_rated_state=value
-                if key == 'per-unit-item-tax-collected-district':
-                    self.per_unit_item_item_tax_collected_district=value
-                if key == 'per-unit-item-tax-collected-city':
-                    self.per_unit_item_tax_collected_city=value
-                if key == 'per-unit-item-tax-collected-county':
-                    self.per_unit_item_tax_collected_county=value
-                if key == 'per-unit-item-tax-collected-state':
-                    self.per_unit_item_tax_collected_state=value
-                if key == 'per-unit-shipping-taxable-district':
-                    self.per_unit_shipping_taxable_district=value
-                if key == 'per-unit-shipping-taxable-city':
-                    self.per_unit_shipping_taxable_city=value
-                if key == 'per-unit-shipping-taxable-county':
-                    self.per_unit_shipping_taxable_county=value
-                if key == 'per-unit-shipping-taxable-state':
-                    self.per_unit_shipping_taxable_state=value
-                if key == 'per-unit-shipping-non-taxable-district':
-                    self.per_unit_shipping_non_taxable_district=value
-                if key == 'per-unit-shipping-non-taxable-city':
-                    self.per_unit_shipping_non_taxable_city=value
-                if key == 'per-unit-shipping-non-taxable-county':
-                    self.per_unit_shipping_non_taxable_county=value
-                if key == 'per-unit-shipping-non-taxable-state':
-                    self.per_unit_shipping_non_taxable_state=value
-                if key == 'per-unit-shipping-zero-rated-district':
-                    self.per_unit_shipping_zero_rated_district=value
-                if key == 'per-unit-shipping-zero-rated-city':
-                    self.per_unit_shipping_zero_rated_city=value
-                if key == 'per-unit-shipping-zero-rated-county':
-                    self.per_unit_shipping_zero_rated_county=value
-                if key == 'per-unit-shipping-zero-rated-state':
-                    self.per_unit_shipping_zero_rated_state=value
-                if key == 'per-unit-shipping-tax-collected-district':
-                    self.per_unit_shipping_tax_collected_district=value
-                if key == 'per-unit-shipping-tax-collected-city':
-                    self.per_unit_shipping_tax_collected_city=value
-                if key == 'per-unit-shipping-tax-collected-county':
-                    self.per_unit_shipping_tax_collected_county=value
-                if key == 'per-unit-shipping-tax-collected-state':
-                    self.per_unit_shipping_tax_collected_state=value
-        else:
-            raise TypeError("Invalid data type passed to Amazon_CO __init__.  Should be a dictionary\n")
-    
-    def __unicode__(self):
-        return "Amazon_CO instance"
-    
-    def read_line(self,line):
-        res=re.split(r'\t', line.rstrip())
-        if line[-2:-1]=='\t':
+    def read_amazon_line(self,line):
+        self.type='Amazon'
+        res=re.split(self.sep, line.rstrip())
+        if line[-2:-1]==self.sep:
             res.append('')
         if len(res) != len(self.headers):
             return(-1) # improperly formatted line
         for item in self.headers:
             if item == 'buyer-name':
-                self.buyer_name=res[self.headers.index(item)]
-            if item == 'buyer-phone-number':
-                self.buyer_phone_number=res[self.headers.index(item)]
+                self.shipToName=res[self.headers.index(item)]
             if item == 'buyer-email':
-                self.buyer_email=res[self.headers.index(item)]
+                self.buyerEmail=res[self.headers.index(item)]
             if item == 'sku':
                 self.sku=res[self.headers.index(item)]
             if item == 'product-name':
-                self.product_name=res[self.headers.index(item)]
+                self.productName=res[self.headers.index(item)]
             if item == 'purchase-date':
-                self.purchase_date=res[self.headers.index(item)]
-            if item == 'payments-date':
-                self.payments_date=res[self.headers.index(item)]
+                self.purchaseDate=res[self.headers.index(item)]
             if item == 'order-id':
-                self.order_id=res[self.headers.index(item)]
-            if item == 'order-item-id':
-                self.order_item_id=res[self.headers.index(item)]
-            if item == 'external-order-id':
-                self.external_order_id=res[self.headers.index(item)]
+                self.orderId=res[self.headers.index(item)]
             if item == 'quantity-purchased':
-                self.quantity_purchased=res[self.headers.index(item)]
-            if item == 'currency':
-                self.currency=res[self.headers.index(item)]
-            if item == 'item-price':
-                self.item_price=res[self.headers.index(item)]
-            if item == 'item-promotion-discount':
-                self.item_promotion_discount=res[self.headers.index(item)]
-            if item == 'item-promotion-id':
-                self.item_promotion_id=res[self.headers.index(item)]
-            if item == 'ship-promotion-discount':
-                self.ship_promotion_discount=res[self.headers.index(item)]
-            if item == 'ship-promotion-id':
-                self.ship_promotion_id=res[self.headers.index(item)]
-            if item == 'item-tax':
-                self.item_tax=res[self.headers.index(item)]
-            if item == 'shipping-price':
-                self.shipping_price=res[self.headers.index(item)]
-            if item == 'shipping-tax':
-                self.shipping_tax=res[self.headers.index(item)]
+                self.quantity=res[self.headers.index(item)]
             if item == 'ship-service-level':
-                self.ship_service_level=res[self.headers.index(item)]
+                self.serviceLevel=res[self.headers.index(item)]
             if item == 'recipient-name':
-                self.recipient_name=res[self.headers.index(item)]
+                self.shipToName=res[self.headers.index(item)]
             if item == 'ship-address-1':
-                self.ship_address_1=res[self.headers.index(item)]
+                self.shipToAddress1=res[self.headers.index(item)]
             if item == 'ship-address-2':
-                self.ship_address_2=res[self.headers.index(item)]
+                self.shipAddress2=res[self.headers.index(item)]
             if item == 'ship-address-3':
-                self.ship_address_3=res[self.headers.index(item)]
+                self.shipAddress3=res[self.headers.index(item)]
             if item == 'ship-city':
-                self.ship_city=res[self.headers.index(item)]
+                self.shipToCity=res[self.headers.index(item)]
             if item == 'ship-state':
-                self.ship_state=res[self.headers.index(item)]
+                self.shipToState=res[self.headers.index(item)]
             if item == 'ship-postal-code':
-                self.ship_postal_code=res[self.headers.index(item)]
+                self.shipToZip=res[self.headers.index(item)]
             if item == 'ship-country':
-                self.ship_country=res[self.headers.index(item)]
-            if item == 'ship-phone-number':
-                self.ship_phone_number=res[self.headers.index(item)]
-            if item == 'delivery-start-date':
-                self.delivery_start_date=res[self.headers.index(item)]
-            if item == 'delivery-end-date':
-                self.delivery_end_date=res[self.headers.index(item)]
-            if item == 'delivery-time-zone':
-                self.delivery_time_zone=res[self.headers.index(item)]
-            if item == 'delivery-instructions':
-                self.delivery_Instructions=res[self.headers.index(item)]
-            if item == 'sales-channel':
-                self.sales_channel=res[self.headers.index(item)]
-            if item == 'order-channel':
-                self.order_channel=res[self.headers.index(item)]
-            if item == 'order-channel-instance':
-                self.order_channel_instance=res[self.headers.index(item)]
-            if item == 'tax-location-code':
-                self.tax_location_code=res[self.headers.index(item)]
-            if item == 'tax-location-city':
-                self.tax_location_city=res[self.headers.index(item)]
-            if item == 'tax-location-county':
-                self.tax_location_county=res[self.headers.index(item)]
-            if item == 'tax-location-state':
-                self.tax_location_state=res[self.headers.index(item)]
-            if item == 'per-unit-item-taxable-district':
-                self.per_unit_item_taxable_district=res[self.headers.index(item)]
-            if item == 'per-unit-item-taxable-city':
-                self.per_unit_item_taxable_city=res[self.headers.index(item)]
-            if item == 'per-unit-item-taxable-county':
-                self.per_unit_item_taxable_county=res[self.headers.index(item)]
-            if item == 'per-unit-item-taxable-state':
-                self.per_unit_item_taxable_state=res[self.headers.index(item)]
-            if item == 'per-unit-item-non_taxable-district':
-                self.per_unit_item_non_taxable_district=res[self.headers.index(item)]
-            if item == 'per-unit-item-non_taxable-city':
-                self.per_unit_item_non_taxable_city=res[self.headers.index(item)]
-            if item == 'per-unit-item-non_taxable-county':
-                self.per_unit_item_non_taxable_county=res[self.headers.index(item)]
-            if item == 'per-unit-item-non_taxable-state':
-                self.per_unit_non_item_taxable_state=res[self.headers.index(item)]
-            if item == 'per-unit-item-zero-rated-district':
-                self.per_unit_item_zero_rated_district=res[self.headers.index(item)]
-            if item == 'per-unit-item-zero-rated-city':
-                self.per_unit_item_zero_rated_city=res[self.headers.index(item)]
-            if item == 'per-unit-item-zero-rated-county':
-                self.per_unit_item_zero_rated_county=res[self.headers.index(item)]
-            if item == 'per-unit-item-zero-rated-state':
-                self.per_unit_item_zero_rated_state=res[self.headers.index(item)]
-            if item == 'per-unit-item-tax-collected-district':
-                self.per_unit_item_item_tax_collected_district=res[self.headers.index(item)]
-            if item == 'per-unit-item-tax-collected-city':
-                self.per_unit_item_tax_collected_city=res[self.headers.index(item)]
-            if item == 'per-unit-item-tax-collected-county':
-                self.per_unit_item_tax_collected_county=res[self.headers.index(item)]
-            if item == 'per-unit-item-tax-collected-state':
-                self.per_unit_item_tax_collected_state=res[self.headers.index(item)]
-            if item == 'per-unit-shipping-taxable-district':
-                self.per_unit_shipping_taxable_district=res[self.headers.index(item)]
-            if item == 'per-unit-shipping-taxable-city':
-                self.per_unit_shipping_taxable_city=res[self.headers.index(item)]
-            if item == 'per-unit-shipping-taxable-county':
-                self.per_unit_shipping_taxable_county=res[self.headers.index(item)]
-            if item == 'per-unit-shipping-taxable-state':
-                self.per_unit_shipping_taxable_state=res[self.headers.index(item)]
-            if item == 'per-unit-shipping-non-taxable-district':
-                self.per_unit_shipping_non_taxable_district=res[self.headers.index(item)]
-            if item == 'per-unit-shipping-non-taxable-city':
-                self.per_unit_shipping_non_taxable_city=res[self.headers.index(item)]
-            if item == 'per-unit-shipping-non-taxable-county':
-                self.per_unit_shipping_non_taxable_county=res[self.headers.index(item)]
-            if item == 'per-unit-shipping-non-taxable-state':
-                self.per_unit_shipping_non_taxable_state=res[self.headers.index(item)]
-            if item == 'per-unit-shipping-zero-rated-district':
-                self.per_unit_shipping_zero_rated_district=res[self.headers.index(item)]
-            if item == 'per-unit-shipping-zero-rated-city':
-                self.per_unit_shipping_zero_rated_city=res[self.headers.index(item)]
-            if item == 'per-unit-shipping-zero-rated-county':
-                self.per_unit_shipping_zero_rated_county=res[self.headers.index(item)]
-            if item == 'per-unit-shipping-zero-rated-state':
-                self.per_unit_shipping_zero_rated_state=res[self.headers.index(item)]
-            if item == 'per-unit-shipping-tax-collected-district':
-                self.per_unit_shipping_tax_collected_district=res[self.headers.index(item)]
-            if item == 'per-unit-shipping-tax-collected-city':
-                self.per_unit_shipping_tax_collected_city=res[self.headers.index(item)]
-            if item == 'per-unit-shipping-tax-collected-county':
-                self.per_unit_shipping_tax_collected_county=res[self.headers.index(item)]
-            if item == 'per-unit-shipping-tax-collected-state':
-                self.per_unit_shipping_tax_collected_state=res[self.headers.index(item)]
-        self.parse_date()
+                self.shipToCntry=res[self.headers.index(item)]
+            if item == 'carrier':
+                self.carrier=res[self.headers.index(item)]
+            if item == 'pack-slip-type':
+                self.packSlipType=res[self.headers.index(item)]
+        
+        #self.parse_amazon_date()
         return(0)
     
-    def read_header(self,line):
-        self.headers=re.split(r'\t', line.rstrip())
-    
-    def parse_date(self):
+    def parse_amazon_date(self):
         #format: 2014-09-08T13:08:30-07:00
         try:
-            pieces=re.split(r'T',self.purchase_date)
+            pieces=re.split(r'T',self.purchaseDate)
             ymd=re.split(r'-',pieces[0])
             timeGmt=re.split(r'[+-]',pieces[1])
             #drop off final number separated by a +/-.  Is it some GMT adder?
-            # doesn't seem to correlate with actual timesone of purchaser
-            self.purchase_date=ymd[1]+'/'+ymd[2]+'/'+ymd[0]+' '+timeGmt[0]
+            # doesn't seem to correlate with actual timezone of purchaser
+            self.purchaseDate=ymd[1]+'/'+ymd[2]+'/'+ymd[0]+' '+timeGmt[0]
         except:
-            self.purchase_date='00/00/00 00:00:00'
+            self.purchaseDate='00/00/00 00:00:00'
 
-class Zen_CO(models.Model):
-    '''
-    Mirai customer order
-    '''
-    headers=[] # holds headers in order read from file
-    pkt=models.ForeignKey(UPS_PKT, null=True)
-    fromFile=models.URLField(default='')
-    fileLineNo=0
-    filename=models.URLField(default='')
-    type=models.CharField(max_length=20, default='Mirai')
-    v_date_purchased=models.DateField()
-    v_orders_status_name=models.CharField(max_length=50, default='')
-    v_orders_id=models.CharField(max_length=50, default='')
-    v_customers_id=models.CharField(max_length=50, default='')
-    v_customers_name=models.CharField(max_length=100, default='')
-    v_customers_company=models.CharField(max_length=100, default='')
-    # TODO: RG 09/09/14 add in address parser module
-    v_customers_street_address=models.CharField(max_length=200, default='')
-    v_customers_suburb=models.CharField(max_length=200, default='')
-    v_customers_city=models.CharField(max_length=100, default='')
-    v_customers_postcode=models.CharField(max_length=20, default='')
-    v_customers_country=models.CharField(max_length=200, default='')
-    v_customers_telephone=models.CharField(max_length=50, default='')
-    v_customers_email_address=models.EmailField(max_length=254)
-    v_products_model=models.CharField(max_length=100, default='')
-    v_products_name=models.CharField(max_length=100, default='')
-    v_products_options=models.CharField(max_length=100, default='')
-    v_products_options_values=models.CharField(max_length=200, default='')
 
-    def __init__(self, params={}):
-        '''
-        Constructor
-        '''
-        super(Zen_CO,self).__init__()
-        if isinstance(params,dict):
-            for key,value in params.iteritems():
-                if key == 'headers':
-                    self.headers=value
-                if key == 'fileLineNo':
-                    self.fileLineNo=value
-                if key == 'filename':
-                    self.filename=value
-                if key == 'v_date_purchased':
-                    self.v_date_purchased=value
-                if key == 'v_order_status_name':
-                    self.v_order_status_name=value
-                if key == 'v_orders_id':
-                    self.v_orders_id=value
-                if key == 'v_customers_id':
-                    self.v_customers_id=value
-                if key == 'v_customers_name':
-                    self.v_customers_name=value
-                if key == 'v_customers_company':
-                    self.v_customers_company=value
-                if key == 'v_customers_street_address':
-                    self.v_customers_street_address=value
-                if key == 'v_customers_suburb':
-                    self.v_customers_suburb=value
-                if key == 'v_customers_city':
-                    self.v_customers_city=value
-                if key == 'v_customers_postcode':
-                    self.v_customers_postcode=value
-                if key == 'v_customers_country':
-                    self.v_customers_country=value
-                if key == 'v_customers_telephone':
-                    self.v_customers_telephone=value
-                if key == 'v_customers_email_address':
-                    self.v_customers_email_address=value
-                if key == 'v_products_model':
-                    self.v_products_model=value
-                if key == 'v_products_name':
-                    self.v_products_name=value
-                if key == 'v_products_options':
-                    self.v_products_options=value
-                if key == 'v_products_options_values':
-                    self.v_products_options_values=value
-        else:
-            raise TypeError("Invalid data type passed to Zen_CO __init__.  Should be a dictionary\n")
-    
-    def __unicode__(self):
-        return "Zen_CO instance"
-    
-    def read_line(self,line):
-        res=re.split(r'\t', line.rstrip())
-        if line[-2:-1]=='\t':
-            res.append('')
-        if len(res) != len(self.headers):
-            return(-1) # improperly formatted line
-        for item in self.headers:
-            if item == 'v_date_purchased':
-                self.v_date_purchased=res[self.headers.index(item)]
-            if item == 'v_orders_status_name':
-                self.v_order_status_name=res[self.headers.index(item)]
-            if item == 'v_orders_id':
-                self.v_orders_id=res[self.headers.index(item)]
-            if item == 'v_customers_id':
-                self.v_customers_id=res[self.headers.index(item)]
-            if item == 'v_customers_name':
-                self.v_customers_name=res[self.headers.index(item)]
-            if item == 'v_customers_street_address':
-                self.v_customers_street_address=res[self.headers.index(item)]
-            if item == 'v_customers_suburb':
-                self.v_customers_suburb=res[self.headers.index(item)]
-            if item == 'v_customers_city':
-                self.v_customers_city=res[self.headers.index(item)]
-            if item == 'v_customers_postcode':
-                self.v_customers_postcode=res[self.headers.index(item)]
-            if item == 'v_customers_country':
-                self.v_customers_country=res[self.headers.index(item)]
-            if item == 'v_customers_telephone':
-                self.v_customers_telephone=res[self.headers.index(item)]
-            if item == 'v_customers_email_address':
-                self.v_customers_email_address=res[self.headers.index(item)]
-            if item == 'v_products_model':
-                self.v_products_model=res[self.headers.index(item)]
-            if item == 'v_products_name':
-                self.v_products_name=res[self.headers.index(item)]
-            if item == 'v_products_options':
-                self.v_products_options=res[self.headers.index(item)]
-            if item == 'v_products_options_values':
-                self.v_products_options_values=res[self.headers.index(item)]
-        self.parse_date()
-        return(0)
-        
-    def read_header(self,line):
-        self.headers=re.split(r'\t', line.rstrip())
-        
-    def parse_date(self):
-        #format: 2014-08-14 14:20:46
-        try:
-            pieces=re.split(r' ',self.v_date_purchased)
-            ymd=re.split(r'-',pieces[0])
-            #drop off final number separated by a +/-.  Is it some GMT adder?
-            # doesn't seem to correlate with actual timesone of purchaser
-            self.v_date_purchased=ymd[1]+'/'+ymd[2]+'/'+ymd[0]+' '+pieces[1]
-        except:
-            self.v_date_purchased='00/00/00 00:00:00'
-    
-class UPS_SOR(models.Model):
+class ShipmentOrderReport(models.Model):
     '''
     UPS shipped orders report object
     '''
@@ -1813,7 +814,7 @@ class UPS_SOR(models.Model):
         '''
         Constructor
         '''
-        super(UPS_SOR,self).__init__()
+        super(ShipmentOrderReport,self).__init__()
         if isinstance(params,dict):
             for key,value in params.iteritems():
                 if key == 'workbook':
@@ -1827,10 +828,10 @@ class UPS_SOR(models.Model):
                 if key == 'zenSep':
                     self.zenSep=value
         else:
-            raise TypeError("Invalid data type passed to UPS_SOR __init__.  Should be a dictionary\n")
+            raise TypeError("Invalid data type passed to ShipmentOrderReport __init__.  Should be a dictionary\n")
     
     def __unicode__(self):
-        return "UPS_SOR instance"
+        return "ShipmentOrderReport instance"
     
     def open_workbook(self,filename):
         self.parseErrors[self.filename]=[]
@@ -1876,7 +877,7 @@ class UPS_SOR(models.Model):
                 else:
                     # Assume rows after the header row contain line items
                     line=''
-                    # build up a tab separated line that UPS_SO line items know how to parse 
+                    # build up a tab separated line that ShipmentOrderRow line items know how to parse 
                     for colIndex in range(sheet.ncols):
                         cell=sheet.cell(rowIndex,colIndex)
                         # parse the cell information base on cell type
@@ -1892,7 +893,7 @@ class UPS_SOR(models.Model):
                             # unspecified cell type, just output a blank
                             line+='\t'
                             self.parseErrors[self.filename].append('PARSE WARNING: unknown data type in cell ('+ xlrd.cellname(rowIndex,colIndex) +'), set to blank ')
-                    so=UPS_SO({'headers':self.headers,'fileLineNo':rowIndex+1})
+                    so=ShipmentOrderRow({'headers':self.headers,'fileLineNo':rowIndex+1})
                     so.read_line(line[:-1])
                     lineError=so.check_line()
                     if lineError != '':
@@ -1968,7 +969,7 @@ class UPS_SOR(models.Model):
                       order.SHIP_VIA+'\n')
         return(zenStr)
 
-class UPS_SO(models.Model):
+class ShipmentOrderRow(models.Model):
     '''
     UPS shipped orders line item object
     '''
@@ -2026,7 +1027,7 @@ class UPS_SO(models.Model):
         '''
         Constructor
         '''
-        super(UPS_SO,self).__init__()
+        super(ShipmentOrderRow,self).__init__()
         if isinstance(params,dict):
             for key,value in params.iteritems():
                 if key == 'headers':
@@ -2128,10 +1129,10 @@ class UPS_SO(models.Model):
                 if key == 'Date & Time Invoiced':
                     self.INVOICE_DATE=value
         else:
-            raise TypeError("Invalid data type passed to UPS_SO __init__.  Should be a dictionary\n")
+            raise TypeError("Invalid data type passed to ShipmentOrderRow __init__.  Should be a dictionary\n")
     
     def __unicode__(self):
-        return "UPS_SO instance"
+        return "ShipmentOrderRow instance"
     
     def read_line(self,line):
         res=re.split(r'\t', line.rstrip())

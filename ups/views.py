@@ -2,7 +2,7 @@ from django.shortcuts import render, get_object_or_404, render_to_response
 from django.http import HttpResponseRedirect
 from django.core.urlresolvers import reverse
 from django.views import generic
-from ups.models import mirai_check_args, mirai_get_files, mirai_initialize_ups_pkt, UPS_CO_FILE, UPS_PD, UPS_PH, UPS_PKT, UPS_SO, UPS_SOR
+from ups.models import mirai_check_args, mirai_get_files, mirai_initialize_ups_pkt, CustOrder, CustOrderQueryRow, PD, PH, PickTicket, ShipmentOrderRow, ShipmentOrderReport
 from ups.forms import FileNameForm
 import time
 import datetime
@@ -14,7 +14,7 @@ def index(request):
     return render(request,'ups/index.html')
 
 def file_creation(request, pk):
-    ups_pkt=get_object_or_404(UPS_PKT,pk=pk)
+    ups_pkt=get_object_or_404(PickTicket,pk=pk)
     
     return render(request,'ups/file_creation.html', {'ups_pkt':ups_pkt})
 
@@ -27,7 +27,7 @@ def file_selection(request):
         # check whether it's valid:
         if form.is_valid():
             # process the data in form.cleaned_data as required
-            # create a UPS_PKT object and initialize it
+            # create a PickTicket object and initialize it
             try:
                 files=request.POST.get("files").split('&')
             except KeyError:
@@ -42,7 +42,7 @@ def file_selection(request):
             ups_pkt=mirai_initialize_ups_pkt(files,inputType)
             #
             # redirect to a new URL:)
-            return HttpResponseRedirect(reverse('ups:file_creation',args=(ups_pkt,)))
+            return HttpResponseRedirect(reverse('ups:file_creation',kwargs={'pk':ups_pkt.id}))
     # if a GET (or any other method) we'll create a blank form
     else:
         form=FileNameForm()
