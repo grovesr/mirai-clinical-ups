@@ -3,6 +3,7 @@ from __future__ import unicode_literals
 
 from django.db import models, migrations
 import datetime
+from django.utils.timezone import utc
 
 
 class Migration(migrations.Migration):
@@ -48,7 +49,7 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
                 ('query', models.CharField(default=b'', max_length=1024)),
-                ('queryId', models.DateTimeField(default=datetime.datetime(2014, 12, 29, 17, 5, 55, 339148))),
+                ('queryId', models.DateTimeField(default=datetime.datetime(2014, 12, 30, 10, 32, 59, 511086, tzinfo=utc))),
                 ('queryRecordNumber', models.IntegerField(default=0)),
                 ('record', models.TextField(default=b'')),
                 ('header', models.BooleanField(default=False)),
@@ -187,7 +188,7 @@ class Migration(migrations.Migration):
                 ('HDR_REC_TYPE', models.CharField(default=b'HDR', max_length=3)),
                 ('DOC_TYPE', models.CharField(default=b'PICKTICKET', max_length=10)),
                 ('CMPY_NAME', models.CharField(default=b'', max_length=20)),
-                ('DOC_DATE', models.CharField(default=b'12/29/14 17:05:55', max_length=17)),
+                ('DOC_DATE', models.CharField(default=b'12/30/14 10:32:59', max_length=17)),
                 ('TRL_REC_TYPE', models.CharField(default=b'TRL', max_length=3)),
                 ('parseErrors', models.TextField(default=b'')),
                 ('fileName', models.URLField(default=b'')),

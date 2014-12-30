@@ -31,18 +31,23 @@ def file_selection(request):
             try:
                 files=request.POST.get("files").split('&')
             except KeyError:
-                return render(request, 'ups:file_selection', {
+                return render(request, 'ups/file_selection.html', {
                     'error_message': "No files selected.",
                 })
             inputType=mirai_check_args(files)
             if  inputType== -1:
-                return render(request, 'ups:file_selection', {
+                print "inputType="+str(inputType)+"\n"
+                return render(request, 'ups/file_selection.html', {
                     'error_message': "Problem with the files.",
                 })
             ups_pkt=mirai_initialize_ups_pkt(files,inputType)
+#             if status == -1:
+#                 return render(request, 'ups/file_selection.html', {
+#                     'error_message': "Problem with the files.",
+#                 })
             #
             # redirect to a new URL:)
-            return HttpResponseRedirect(reverse('ups:file_creation',kwargs={'pk':ups_pkt.id}))
+            return HttpResponseRedirect(reverse('ups:file_creation',args=ups_pkt.id, kwargs={'ups_pkt':ups_pkt}))
     # if a GET (or any other method) we'll create a blank form
     else:
         form=FileNameForm()

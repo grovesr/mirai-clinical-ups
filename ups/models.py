@@ -4,13 +4,20 @@ import re
 from django.utils import timezone
 import time
 import random
-import os, sys
+import os
 import xlrd
+
+def debug_setup():
+    files=['https://dl.dropboxusercontent.com/1/view/1m5a3h3691zzblw/Mirai/ShipOrders/SS_1640116e-7523-4d6a-879d-4644e7f48001.csv']
+    #files.append('https://dl.dropboxusercontent.com/1/view/vmyt77mcee23zkz/Mirai/ShipOrders/unshipped_amazon.txt')
+    inputType=mirai_check_args(files)
+    ups_pkt=mirai_initialize_ups_pkt(files, inputType)
+    return ups_pkt
 
 def mirai_check_args(args):
     if len(args) < 1:
-        raw_input('Please specify a Purchase Order directory, list of Dropbox URLs or list of file(s)\n')
-        sys.exit(-1)
+        #raw_input('Please specify a Purchase Order directory, list of Dropbox URLs or list of file(s)\n')
+        return -1
     for arg in args:
         "for multiple arguments, assume that all are the same type"
         if os.path.isfile(arg):
@@ -80,7 +87,7 @@ def mirai_initialize_ups_pkt(files,inputType):
     files=mirai_get_files(inputType, files)
     #go through the files and store each row as a CustOrderQueryRow
     for f,contents in files.iteritems():
-        fileTimeStamp=timezone.datetime.now()
+        queryFileTimeStamp=timezone.now()
         header=True
         recordNumber=0
         for fileLine in contents.splitlines():
@@ -91,11 +98,11 @@ def mirai_initialize_ups_pkt(files,inputType):
             thisCo.ups_pkt=ups_pkt
             thisCo.record=fileLine
             thisCo.queryRecordNumber=recordNumber
-            thisCo.queryId=fileTimeStamp
+            thisCo.queryId=queryFileTimeStamp
             thisCo.query=f
             recordNumber+=1
             thisCo.save()
-    ups_pkt.read_files()
+    ups_pkt=ups_pkt.read_files()
     return ups_pkt
 
 # Create your models here.
@@ -109,7 +116,9 @@ class PickTicket(models.Model):
     HDR_REC_TYPE=models.CharField(max_length=3, default='HDR')              # 3 char
     DOC_TYPE=models.CharField(max_length=10, default='PICKTICKET')           # 10 char
     CMPY_NAME=models.CharField(max_length=20, default='')                    # 20 char
-    DOC_DATE=models.CharField(max_length=17, default=timezone.datetime.now().strftime('%m/%d/%y %H:%M:%S'))                     # 17 char MM/DD/YY HH:MM:SS
+    DOC_DATE=models.CharField(max_length=17, default=timezone.now().strftime('%m/%d/%y %H:%M:%S'))                     # 17 char MM/DD/YY HH:MM:SS
+    division=models.CharField(max_length=10,default='')
+    warehouse=models.CharField(max_length=3,default='')
     # need accessor for TRANS_ID
     # PH section
     # TRL section
@@ -129,7 +138,7 @@ class PickTicket(models.Model):
         
     def ph(self):
         phStr=''
-        for phItem in self.PH:
+        for phItem in PH.objects.filter(ups_pkt_id=self.id):
             phStr+=phItem.ph_item()
         phStr = phStr[:-1]
         return(phStr)
@@ -145,9 +154,9 @@ class PickTicket(models.Model):
     
     def rec_count(self):
         index=0
-        for ph in self.PH:
+        for ph in PH.objects.filter(ups_pkt_id=self.id):
             index += 3  # PH, PH1, PHI
-            for pd in ph.PD:
+            for pd in PD.objects.filter(ups_ph_id=ph.id):
                 index+=1 # PD
         # HDR + TRL + pickticket loops + detail loops
         return('{:07}'.format(2+index))
@@ -159,15 +168,18 @@ class PickTicket(models.Model):
         #get the distinct queries for this pickTicket instance
         queryIds=CustOrderQueryRow.objects.filter(ups_pkt_id=self.id).values('queryId').distinct()
         for  queryId in queryIds:
-            thisQuery=CustOrderQueryRow.objects.filter(queryId=queryId)
+            thisQuery=CustOrderQueryRow.objects.filter(queryId=queryId['queryId'])
             header=thisQuery.filter(header=True)
+            if len(header) != 1:
+                return -1
+            header=header[0].record
             #get the query records for this query
             thisQueryRows=thisQuery.filter(header=False)
             for queryRow in thisQueryRows:
                 # create a custOrder instance for this queryRow and parse the query data into it
                 coIncr=CustOrder()
-                coIncr.queryName=thisQuery.query
-                coIncr.queryLineNo=thisQuery.queryRecordNumber
+                coIncr.queryName=queryRow.query
+                coIncr.queryLineNo=queryRow.queryRecordNumber
                 coIncr.read_header(header)
                 coIncr.ups_pkt=self
                 if reMatchZen.match(header):
@@ -183,6 +195,8 @@ class PickTicket(models.Model):
                     queryRow.save()
                 coIncr.save()
         self.parse_po_objects()
+        return self
+            
         
     def parse_po_objects(self):
         phIndex=0
@@ -191,36 +205,39 @@ class PickTicket(models.Model):
         orderIds=CustOrder.objects.filter(ups_pkt=self.id).values('orderId').distinct()
         #for each order line within a unique orderId (may consist of multiple order lines)
         for orderId in orderIds:
-            coLines=CustOrder.filter(pk=orderId)
+            coLines=CustOrder.objects.filter(orderId=orderId['orderId'])
             #for each custOrder line with a given unique orderId
             for coLine in coLines:
                 phIndex+=2
                 phItem=PH()
-                phItem.WHSE=self.warehouse
-                phItem.CO=self.CMPY_NAME
-                phItem.DIV=self.division
+                phItem.WHSE=self.warehouse[:3]
+                phItem.CO=self.CMPY_NAME[:10]
+                phItem.DIV=self.division[:10]
                 phItem.STAT_CODE='10'
-                phItem.PKT_PROFILE_ID=self.PKT_PROFILE_ID
-                phItem.PKT_CTRL_NBR='MC'+self.timeStamp
+                phItem.PKT_PROFILE_ID=phItem.CO+phItem.DIV
+                phItem.PKT_CTRL_NBR=('MC'+self.timeStamp)[:10]
                 phItem.LANG_ID='EN'
                 phItem.PH1_FREIGHT_TERMS='0'
                 phItem.PHI_SPL_INSTR_NBR='{:03}'.format(phIndex)
                 phItem.PHI_SPL_INSTR_TYPE='QV'
                 phItem.PHI_SPL_INSTR_CODE='01,08'
-                phItem.ups_pkt=self.id
+                phItem.ups_pkt=self
                 if phItem.parse(coLine) < 0:
                     # unable to create a PH object from this. Append to any errors already 
                     coLine.parseError='PARSE ERROR: Unable to create PH item: from CustOrder'
                     coLine.save()
                 else:
                     itemIndex+=1
+                    # save the PH object so we have an ID ro save with the PD objects being added below
+                    phItem.save()
                     phItem.add_detail(itemIndex,coLine)
                     lineError=phItem.check_line()
                     if lineError != '':
                         # some missing information in this line item, generate an error
-                        coLine.parseError.append(lineError)
+                        coLine.parseError+=lineError
                         coLine.save()
                     phItem.save()
+        return 0
     
     def parse_report(self):
         fileErrors=[]
@@ -317,7 +334,7 @@ class CustOrderQueryRow(models.Model):
     """
     ups_pkt = models.ForeignKey(PickTicket)
     query=models.CharField(max_length=1024, default='')
-    queryId=models.DateTimeField(default=timezone.datetime.now())
+    queryId=models.DateTimeField(default=timezone.now())
     queryRecordNumber=models.IntegerField(default=0)
     record=models.TextField(default='')
     header=models.BooleanField(default=False)
@@ -373,18 +390,18 @@ class PH(models.Model):
     LANG_ID=models.CharField(max_length=3,default='',blank=True)            # opt. 3 char
                                         # opt. PH1 section
     # PH1 section
-    PH1_REC_TYPE=models.CharField(max_length=3,default='PH1')                    # 3 char
+    PH1_REC_TYPE=models.CharField(max_length=3,default='PH1')                     # 3 char
     PH1_ACCT_RCVBL_ACCT_NBR=models.CharField(max_length=10,default='',blank=True) # opt. 10 char
     PH1_ACCT_RCVBL_CODE=models.CharField(max_length=2,default='',blank=True)      # opt. 2 char
     PH1_CUST_PO_NBR=models.CharField(max_length=26,default='',blank=True)         # opt. 26 char
     PH1_PRTY_CODE=models.CharField(max_length=2,default='',blank=True)            # opt. 2 char
     PH1_PRTY_SFX=models.CharField(max_length=3,default='',blank=True)             # opt. 2 char
-    PH1_ORD_DATE=models.CharField(max_length=14,default='',blank=True)            # opt. 14 char MM/DD/YY
-    PH1_START_SHIP_DATE=models.CharField(max_length=14,default='',blank=True)     # opt. 14 char MM/DD/YY
-    PH1_STOP_SHIP_DATE=models.CharField(max_length=14,default='',blank=True)      # opt. 14 char MM/DD/YY
-    PH1_SCHED_DLVRY_DATE=models.CharField(max_length=14,default='',blank=True)    # opt. 14 char MM/DD/YY
+    PH1_ORD_DATE=models.DateTimeField(blank=True)                                 # opt. 14 char MM/DD/YY
+    PH1_START_SHIP_DATE=models.DateTimeField(blank=True)                          # opt. 14 char MM/DD/YY
+    PH1_STOP_SHIP_DATE=models.DateTimeField(blank=True)                           # opt. 14 char MM/DD/YY
+    PH1_SCHED_DLVRY_DATE=models.DateTimeField(blank=True)                         # opt. 14 char MM/DD/YY
     PH1_EARLIEST_DLVRY_TIME=models.CharField(max_length=4,default='',blank=True)  # opt. 4 char 1200??
-    PH1_SCHED_DLVRY_DATE_END=models.CharField(max_length=10,default='',blank=True)# opt. 14 char MM/DD/YY
+    PH1_SCHED_DLVRY_DATE_END=models.DateTimeField(blank=True)                     # opt. 14 char MM/DD/YY
     PH1_RTE_GUIDE_NBR=models.CharField(max_length=10,default='',blank=True)       # opt. 10 char
     PH1_CUST_RTE=models.CharField(max_length=1,default='',blank=True)             # opt. 1 char (Y,N)
     PH1_RTE_ATTR=models.CharField(max_length=30,default='',blank=True)            # opt. 30 char
@@ -407,10 +424,10 @@ class PH(models.Model):
     PH1_COD_FUNDS=models.CharField(max_length=1,default='',blank=True)            # OPT. 1 CHAR
     PH1_INTL_GOODS_DESC=models.CharField(max_length=35,default='',blank=True)     # opt. 35 char
     # PHI
-    PHI_REC_TYPEE=models.CharField(max_length=3,default='PHI')                   # 3 char
+    PHI_REC_TYPE=models.CharField(max_length=3,default='PHI')                   # 3 char
     PHI_SPL_INSTR_NBR=models.CharField(max_length=3,default='')                  # 3 char
     PHI_SPL_INSTR_TYPE=models.CharField(max_length=2,default='')                 # 2 char
-    PHI_SPL_INSTR_CODE=models.CommaSeparatedIntegerField(max_length=2,default='08')# 2 char list from: (01=shipment,02=delivery,04=exception,08=delivery failure)
+    PHI_SPL_INSTR_CODE=models.CommaSeparatedIntegerField(max_length=11,default='08')# 2 char list from: (01=shipment,02=delivery,04=exception,08=delivery failure)
     PHI_SPL_INSTR_DESC=models.CharField(max_length=135,default='')               # 135 char
     PHI_PKT_PROFILE_ID=models.CharField(max_length=10,default='')                # 10 char
 
@@ -422,22 +439,21 @@ class PH(models.Model):
     
     def parse(self,coLine):
         try:
-            self.PH1_ORD_DATE=coLine.purchaseDate[:10]
-            self.PH1_START_SHIP_DATE=coLine.purchaseDate[:10]
-            self.PH1_CUST_PO_NBR=coLine.orderId
-            self.SHIPTO_NAME=coLine.shipToName
-            self.SHIPTO_ADDR_1=coLine.shipToAddress1
-            self.SHIPTO_ADDR_2=coLine.shipToAddress2
-            self.SHIPTO_ADDR_3=coLine.shipToAddress3
-            self.SHIPTO_CITY=coLine.shipToCity
-            self.SHIPTO_STATE=coLine.shipToState
-            self.SHIPTO_ZIP=coLine.shipToZip
-            self.SHIPTO_CNTRY=coLine.shipToCntry
-            self.PACK_SLIP_TYPE=coLine.packSlipType
-            self.CARRIER=coLine.carrier
+            self.PH1_ORD_DATE=coLine.purchaseDate
+            self.PH1_START_SHIP_DATE=coLine.purchaseDate
+            self.PH1_CUST_PO_NBR=coLine.orderId[:26]
+            self.SHIPTO_NAME=coLine.shipToName[:35]
+            self.SHIPTO_ADDR_1=coLine.shipToAddress1[:75]
+            self.SHIPTO_ADDR_2=coLine.shipToAddress2[:75]
+            self.SHIPTO_ADDR_3=coLine.shipToAddress3[:75]
+            self.SHIPTO_CITY=coLine.shipToCity[:40]
+            self.SHIPTO_STATE=coLine.shipToState[:3]
+            self.SHIPTO_ZIP=coLine.shipToZip[:11]
+            self.SHIPTO_CNTRY=coLine.shipToCntry[:4]
+            self.PACK_SLIP_TYPE=coLine.packSlipType[:2]
             self.ORD_TYPE=coLine.orderType[:2]
             self.SHIP_VIA=self.parse_ship_via(coLine.serviceLevel)
-            self.PHI_SPL_INSTR_DESC=coLine.buyerEmail
+            self.PHI_SPL_INSTR_DESC=coLine.buyerEmail[:135]
         except:
             return(-1)
         return(0)
@@ -452,16 +468,17 @@ class PH(models.Model):
             return('UUSP')
     def add_detail(self,index,coLine):
         pdItem=PD()
-        pdItem.CUST_SKU=coLine.sku
-        pdItem.SIZE_DESC=coLine.productName
-        pdItem.ORIG_ORD_QTY=coLine.quantity
-        pdItem.ORIG_PKT_QTY=coLine.quantity
+        pdItem.CUST_SKU=coLine.sku[:20]
+        pdItem.SIZE_DESC=coLine.productName[:15]
+        pdItem.ORIG_ORD_QTY=str(coLine.quantity)[:9]
+        pdItem.ORIG_PKT_QTY=str(coLine.quantity)[:9]
         pdItem.PKT_SEQ_NBR='{:09}'.format(index)
         pdItem.STAT_CODE='00'
+        pdItem.ups_ph=self
         lineError=pdItem.check_line()
         if lineError != '':
             # some missing information in this line item, generate an error
-            coLine.parseError.append(lineError)
+            coLine.parseError+=lineError
             coLine.save()
         pdItem.save()
     
@@ -472,7 +489,7 @@ class PH(models.Model):
             self.SHIPTO_CNTRY == '' or self.SHIPTO_ZIP == '' or self.PH1_FREIGHT_TERMS == '' or 
             self.ORD_TYPE == '' or self.SHIP_VIA == '' or self.PKT_CTRL_NBR == '' or 
             self.PHI_SPL_INSTR_NBR == '' or self.PHI_SPL_INSTR_TYPE == '' or self.PHI_SPL_INSTR_CODE == ''):
-            errorLine='PARSE ERROR: missing data on line '+str(self.fileLineNo)+' in file "'+self.filename+'":\n\t'
+            errorLine='PARSE ERROR: missing data:\n\t'
             if self.PH1_CUST_PO_NBR == '':
                 errorLine+='"Customer PO # (ordere #)" missing, '
             if self.SHIPTO_NAME == '':
@@ -521,9 +538,9 @@ class PH(models.Model):
                  self.NBR_OF_PAKING_SLIPS[:3]+self.SEP+self.PACK_SLIP_TYPE[:2]+self.SEP+self.LANG_ID[:3]+os.linesep+
                  self.PH1_REC_TYPE[:3]+self.SEP+self.PH1_ACCT_RCVBL_ACCT_NBR[:10]+self.SEP+self.PH1_ACCT_RCVBL_CODE[:2]+self.SEP+
                  self.PH1_CUST_PO_NBR[:26]+self.SEP+self.PH1_PRTY_CODE[:2]+self.SEP+self.PH1_PRTY_SFX[:2]+self.SEP+
-                 self.PH1_ORD_DATE[:14]+self.SEP+self.PH1_START_SHIP_DATE[:14]+self.SEP+self.PH1_STOP_SHIP_DATE[:14]+self.SEP+
-                 self.PH1_SCHED_DLVRY_DATE[:14]+self.SEP+self.PH1_EARLIEST_DLVRY_TIME[:4]+self.SEP+
-                 self.PH1_SCHED_DLVRY_DATE_END[:14]+self.SEP+self.PH1_RTE_GUIDE_NBR[:10]+self.SEP+self.PH1_CUST_RTE[:1]+self.SEP+
+                 self.parse_date(self.PH1_ORD_DATE)[:14]+self.SEP+self.parse_date(self.PH1_START_SHIP_DATE)[:14]+self.SEP+self.parse_date(self.PH1_STOP_SHIP_DATE)[:14]+self.SEP+
+                 self.parse_date(self.PH1_SCHED_DLVRY_DATE)[:14]+self.SEP+self.PH1_EARLIEST_DLVRY_TIME[:4]+self.SEP+
+                 self.parse_date(self.PH1_SCHED_DLVRY_DATE_END)[:14]+self.SEP+self.PH1_RTE_GUIDE_NBR[:10]+self.SEP+self.PH1_CUST_RTE[:1]+self.SEP+
                  self.PH1_RTE_ATTR[:30]+self.SEP+self.PH1_RTE_ID[:10]+self.SEP+self.PH1_RTE_STOP_SEQ[:5]+self.SEP+
                  self.PH1_RTE_TO[:10]+self.SEP+self.PH1_RTE_TYPE_1[:2]+self.SEP+self.PH1_RTE_TYPE_2[:2]+self.SEP+
                  self.PH1_RTE_ZIP[:11]+self.SEP+self.PH1_RTE_SWC_NBR[:10]+self.SEP+self.PH1_CONSOL_NBR[:10]+self.SEP+
@@ -532,15 +549,22 @@ class PH(models.Model):
                  self.PH1_INCO_TERMS[:3]+self.SEP+self.PH1_BILL_ACCT_NBR[:10]+self.SEP+self.PH1_COD_FUNDS[:1]+self.SEP+
                  self.PH1_INTL_GOODS_DESC[:35]+os.linesep)
         indx=int(self.PHI_SPL_INSTR_NBR[:3])
-        for si in self.PHI_SPL_INSTR_CODE:
+        for si in self.PHI_SPL_INSTR_CODE.split(','):
 
             phItem+=(self.PHI_REC_TYPE[:3]+self.SEP+'{:03}'.format(indx)+self.SEP+self.PHI_SPL_INSTR_TYPE[:2]+self.SEP+
                      si[:2]+self.SEP+self.PHI_SPL_INSTR_DESC[:135]+self.SEP+
                      self.PHI_PKT_PROFILE_ID[:10]+os.linesep)
             indx+=1
-        for pdItem in self.PD:
+        for pdItem in PD.objects.filter(ups_ph_id=self.id):
             phItem+=pdItem.pd_item(self.CO,self.DIV)+os.linesep
         return(phItem)
+    
+    def parse_date(self,dateVal):
+        #format: 2014-09-08T13:08:30-07:00
+        if dateVal == None:
+            return ''
+        else:
+            return dateVal.strftime('%m/%d/%Y')
 
 class PD(models.Model):
     '''
@@ -597,7 +621,7 @@ class PD(models.Model):
     def check_line(self):
         errorLine=''
         if self.CUST_SKU == '' or self.ORIG_ORD_QTY == '' or self.PKT_SEQ_NBR:
-            errorLine='PARSE ERROR: missing data on line '+str(self.fileLineNo)+' in file "'+self.filename+'":\n\t'
+            errorLine='PARSE ERROR: missing data:\n\t'
             if self.CUST_SKU == '':
                 errorLine+='"SKU" missing, '
             if self.ORIG_ORD_QTY == '':
@@ -609,6 +633,8 @@ class PD(models.Model):
 class CustOrder(models.Model):
     '''
     UPS customer order line item
+    This is holds information parsed from a CustOrderQueryRow and is used
+    to feed information into a PickTicket instance
     '''
     
     headers=[] # holds headers in order read from file
@@ -617,7 +643,7 @@ class CustOrder(models.Model):
     queryLineNo=models.IntegerField(default=0)
     queryName=models.URLField(default='')
     type=models.CharField(max_length=20, default='')
-    purchaseDate=models.DateField(blank=True)
+    purchaseDate=models.DateTimeField(blank=True)
     orderId=models.CharField(max_length=50, default='')
     shipToName=models.CharField(max_length=50, default='')
     shipToAddress1=models.CharField(max_length=100, default='')
@@ -633,15 +659,15 @@ class CustOrder(models.Model):
     serviceLevel=models.CharField(max_length=50,default='')
     buyerEmail=models.EmailField(max_length=254,default='')
     sku=models.CharField(max_length=50,default='')
-    productName=models.CharField(max_length=100,default='')
+    productName=models.CharField(max_length=500,default='')
     quantity=models.IntegerField(default=0)
     parseError=models.TextField(default='')
     
     def __unicode__(self):
-        return 'CustOrder abstract class'
+        return 'CustOrder instance'
     
     def read_header(self,line):
-        self.headers=re.split(r'\t', line.rstrip())
+        self.headers=re.split(self.sep, line.rstrip())
         
     def read_zen_line(self,line):
         self.type='Zen'
@@ -766,9 +792,9 @@ class CustOrder(models.Model):
             if item == 'ship-address-1':
                 self.shipToAddress1=res[self.headers.index(item)]
             if item == 'ship-address-2':
-                self.shipAddress2=res[self.headers.index(item)]
+                self.shipToAddress2=res[self.headers.index(item)]
             if item == 'ship-address-3':
-                self.shipAddress3=res[self.headers.index(item)]
+                self.shipToAddress3=res[self.headers.index(item)]
             if item == 'ship-city':
                 self.shipToCity=res[self.headers.index(item)]
             if item == 'ship-state':
@@ -912,7 +938,7 @@ class ShipmentOrderReport(models.Model):
     def parse_date(self,cell):
         #format: excel date object
         timeValue =xlrd.xldate_as_tuple(cell.value,self.workbook.datemode)
-        return timezone.datetime(*timeValue).strftime('%m/%d/%y %H:%M:%S')
+        return timezone(*timeValue).strftime('%m/%d/%y %H:%M:%S')
     
     def parse_report(self):
         fileErrors=[]
