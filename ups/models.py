@@ -8,8 +8,9 @@ import os
 import xlrd
 
 def debug_setup():
-    files=['https://dl.dropboxusercontent.com/1/view/1m5a3h3691zzblw/Mirai/ShipOrders/SS_1640116e-7523-4d6a-879d-4644e7f48001.csv']
-    #files.append('https://dl.dropboxusercontent.com/1/view/vmyt77mcee23zkz/Mirai/ShipOrders/unshipped_amazon.txt')
+    files=['https://dl.dropboxusercontent.com/1/view/l7twoxgvfjfx9de/Mirai/ShipOrders/SS_1640116e-7523-4d6a-879d-4644e7f48001.csv']
+    files.append('https://dl.dropboxusercontent.com/1/view/ke2sxieecxur5x2/Mirai/ShipOrders/SS_withErrors.csv')
+    files.append('https://dl.dropboxusercontent.com/1/view/qckfuzgdicjkctc/Mirai/ShipOrders/unshipped_amazon.txt')
     inputType=mirai_check_args(files)
     ups_pkt=mirai_initialize_ups_pkt(files, inputType)
     return ups_pkt
@@ -66,6 +67,9 @@ def mirai_get_files(inputType,args):
     return files
 
 def mirai_initialize_ups_pkt(files,inputType):
+    reMatchZen=re.compile('.*v_orders_id.*')
+    reMatchAmazon=re.compile('.*buyer-phone-number.*')
+    reMatchSS=re.compile('.*pack-slip-type.*')
     warehouse='SD4'
     company='MIRAI'
     division='001'
@@ -87,23 +91,38 @@ def mirai_initialize_ups_pkt(files,inputType):
     files=mirai_get_files(inputType, files)
     #go through the files and store each row as a CustOrderQueryRow
     for f,contents in files.iteritems():
-        queryFileTimeStamp=timezone.now()
+        queryFileTimeStamp=time.time()
         header=True
         recordNumber=0
         for fileLine in contents.splitlines():
-            thisCo=CustOrderQueryRow()
             if header:
-                thisCo.header=True
+                # assume header is the first line
+                queryRowHeaders=fileLine.rstrip()
                 header=False
-            thisCo.ups_pkt=ups_pkt
-            thisCo.record=fileLine
-            thisCo.queryRecordNumber=recordNumber
-            thisCo.queryId=queryFileTimeStamp
-            thisCo.query=f
+            else:
+                queryRow=CustOrderQueryRow()
+                queryRow.ups_pkt=ups_pkt
+                queryRow.record=fileLine
+                queryRow.queryRecordNumber=recordNumber
+                queryRow.queryId=queryFileTimeStamp
+                queryRow.query=f
+                queryRow.headers=re.split(queryRow.sep, queryRowHeaders)
+                if reMatchZen.match(queryRowHeaders):
+                    result=queryRow.read_zen_line()
+                if reMatchSS.match(queryRowHeaders):
+                    result=queryRow.read_ss_line()
+                if reMatchAmazon.match(queryRowHeaders):
+                    result=queryRow.read_amazon_line()
+                if result < 0:
+                    # improperly formatted record
+                    queryRow.parseError='PARSE ERROR: improperly formatted line'
+                queryRow.save()
             recordNumber+=1
-            thisCo.save()
-    ups_pkt=ups_pkt.read_files()
-    return ups_pkt
+    result=ups_pkt.parse_po_objects()
+    ups_pkt.save()
+    if result < 0:
+        return result
+    return ups_pkt.id
 
 # Create your models here.
     
@@ -160,52 +179,15 @@ class PickTicket(models.Model):
                 index+=1 # PD
         # HDR + TRL + pickticket loops + detail loops
         return('{:07}'.format(2+index))
-    
-    def read_files(self):
-        reMatchZen=re.compile('.*v_orders_id.*')
-        reMatchAmazon=re.compile('.*buyer-phone-number.*')
-        reMatchSS=re.compile('.*pack-slip-type.*')
-        #get the distinct queries for this pickTicket instance
-        queryIds=CustOrderQueryRow.objects.filter(ups_pkt_id=self.id).values('queryId').distinct()
-        for  queryId in queryIds:
-            thisQuery=CustOrderQueryRow.objects.filter(queryId=queryId['queryId'])
-            header=thisQuery.filter(header=True)
-            if len(header) != 1:
-                return -1
-            header=header[0].record
-            #get the query records for this query
-            thisQueryRows=thisQuery.filter(header=False)
-            for queryRow in thisQueryRows:
-                # create a custOrder instance for this queryRow and parse the query data into it
-                coIncr=CustOrder()
-                coIncr.queryName=queryRow.query
-                coIncr.queryLineNo=queryRow.queryRecordNumber
-                coIncr.read_header(header)
-                coIncr.ups_pkt=self
-                if reMatchZen.match(header):
-                    result=coIncr.read_zen_line(queryRow.record.rstrip())
-                if reMatchSS.match(header):
-                    result=coIncr.read_ss_line(queryRow.record.rstrip())
-                if reMatchAmazon.match(header):
-                    result=coIncr.read_amazon_line(queryRow.record.rstrip())
-                
-                if result < 0:
-                    # improperly formatted record
-                    queryRow.parseError='PARSE ERROR: improperly formatted line'
-                    queryRow.save()
-                coIncr.save()
-        self.parse_po_objects()
-        return self
-            
         
     def parse_po_objects(self):
         phIndex=0
         itemIndex=0
         #find all distinct orderIds
-        orderIds=CustOrder.objects.filter(ups_pkt=self.id).values('orderId').distinct()
-        #for each order line within a unique orderId (may consist of multiple order lines)
+        orderIds=CustOrderQueryRow.objects.filter(ups_pkt=self.id).values('orderId').distinct()
+        #for each order query row within a unique orderId (may consist of multiple order lines)
         for orderId in orderIds:
-            coLines=CustOrder.objects.filter(orderId=orderId['orderId'])
+            coLines=CustOrderQueryRow.objects.filter(orderId=orderId['orderId'])
             #for each custOrder line with a given unique orderId
             for coLine in coLines:
                 phIndex+=2
@@ -224,11 +206,11 @@ class PickTicket(models.Model):
                 phItem.ups_pkt=self
                 if phItem.parse(coLine) < 0:
                     # unable to create a PH object from this. Append to any errors already 
-                    coLine.parseError='PARSE ERROR: Unable to create PH item: from CustOrder'
+                    coLine.parseError+='PARSE ERROR: Unable to create PH item: from CustOrder'
                     coLine.save()
                 else:
                     itemIndex+=1
-                    # save the PH object so we have an ID ro save with the PD objects being added below
+                    # save the PH object so we have an ID to save with the PD objects being added below
                     phItem.save()
                     phItem.add_detail(itemIndex,coLine)
                     lineError=phItem.check_line()
@@ -328,18 +310,200 @@ class CustOrderQueryRow(models.Model):
     Query may be a filename, URL, or web service call
     QueryId is the unique timestamp that ties together the query rows for a given query
     Sep gives a clue to how to parse the record
-    Header is a True/False indicator of whether this is a header record or not.
     A header record will provide the field names for the other record lines for a given query
     parseError holds any errors generated when parsing information out of the row 
     """
     ups_pkt = models.ForeignKey(PickTicket)
     query=models.CharField(max_length=1024, default='')
-    queryId=models.DateTimeField(default=timezone.now())
+    queryId=models.FloatField(default=0)
     queryRecordNumber=models.IntegerField(default=0)
     record=models.TextField(default='')
-    header=models.BooleanField(default=False)
     parseError=models.TextField(default='')
+    headers=models.TextField(default='') # holds headers in order read from file
+    sep=models.CharField(max_length=1,default='\t')
+    type=models.CharField(max_length=20, default='')
+    purchaseDate=models.DateTimeField(blank=True,default=timezone.now())
+    orderId=models.CharField(max_length=50, default='')
+    shipToName=models.CharField(max_length=50, default='')
+    shipToAddress1=models.CharField(max_length=100, default='')
+    shipToAddress2=models.CharField(max_length=100, default='')
+    shipToAddress3=models.CharField(max_length=100, default='')
+    shipToCity=models.CharField(max_length=100,default='')
+    shipToState=models.CharField(max_length=100,default='')
+    shipToZip=models.CharField(max_length=100,default='')
+    shipToCntry=models.CharField(max_length=100,default='')
+    packSlipType=models.CharField(max_length=50,default='')
+    carrier=models.CharField(max_length=50,default='')
+    orderType=models.CharField(max_length=50,default='')
+    serviceLevel=models.CharField(max_length=50,default='')
+    buyerEmail=models.EmailField(max_length=254,default='')
+    sku=models.CharField(max_length=50,default='')
+    productName=models.CharField(max_length=500,default='')
+    quantity=models.IntegerField(default=0)
+        
+    def read_zen_line(self,):
+        self.type='Zen'
+        res=re.split(self.sep, self.record.rstrip())
+        if len(res) != len(self.headers):
+            # improperly formatted line
+            if len(res) > len(self.headers):
+                # the line is too long
+                return(-1)
+            # assume that there are empty cells at the end of the line, just add empty strings
+            for indx in range(len(self.headers)-len(res)):
+                res.append('')
+        for item in self.headers:
+            if item == 'v_date_purchased':
+                self.purchaseDate=res[self.headers.index(item)]
+            if item == 'v_orders_id':
+                self.orderId=res[self.headers.index(item)]
+            if item == 'v_customers_name':
+                self.shipToName=res[self.headers.index(item)]
+            if item == 'v_customers_street_address':
+                self.shipToAddress1=res[self.headers.index(item)]
+            if item == 'v_customers_suburb':
+                self.shipToAddress2=res[self.headers.index(item)]
+            if item == 'v_customers_city':
+                self.shipToCity=res[self.headers.index(item)]
+            if item == 'v_customers_postcode':
+                self.shipToZip=res[self.headers.index(item)]
+            if item == 'v_customers_country':
+                self.shipToCntry=res[self.headers.index(item)]
+            if item == 'v_customers_email_address':
+                self.buyerEmail=res[self.headers.index(item)]
+            if item == 'v_products_model':
+                self.sku=res[self.headers.index(item)]
+            if item == 'v_products_name':
+                self.productName=res[self.headers.index(item)]
+        #self.parse_zen_date()
+        return(0)
+        
+    def parse_zen_date(self):
+        #format: 2014-08-14 14:20:46
+        try:
+            pieces=re.split(r' ',self.purchaseDate)
+            ymd=re.split(r'-',pieces[0])
+            #drop off final number separated by a +/-.  Is it some GMT adder?
+            # doesn't seem to correlate with actual timesone of purchaser
+            self.purchaseDate=ymd[1]+'/'+ymd[2]+'/'+ymd[0]+' '+pieces[1]
+        except:
+            self.purchaseDate='00/00/00 00:00:00'
     
+    def read_ss_line(self):
+        self.type='SS'
+        res=re.split(self.sep, self.record.rstrip())
+        if len(res) != len(self.headers):
+            # improperly formatted line
+            if len(res) > len(self.headers):
+                # the line is too long
+                return(-1)
+            # assume that there are empty cells at the end of the line, just add empty strings
+            for indx in range(len(self.headers)-len(res)):
+                res.append('')
+        for item in self.headers:
+            if item == 'sku':
+                self.sku=res[self.headers.index(item)]
+            if item == 'product-name':
+                self.productName=res[self.headers.index(item)]
+            if item == 'order-id':
+                self.orderId=res[self.headers.index(item)]
+            if item == 'order-type':
+                self.orderType=res[self.headers.index(item)]
+            if item == 'quantity-purchased':
+                self.quantity=res[self.headers.index(item)]
+            if item == 'purchase-date':
+                self.purchaseDate=res[self.headers.index(item)]
+            if item == 'ship-service-level':
+                self.serviceLevel=res[self.headers.index(item)]
+            if item == 'recipient-name':
+                self.shipToName=res[self.headers.index(item)]
+            if item == 'buyer-email':
+                self.buyerEmail=res[self.headers.index(item)]
+            if item == 'ship-address-1':
+                self.shipToAddress1=res[self.headers.index(item)]
+            if item == 'ship-address-2':
+                self.shipToAddress2=res[self.headers.index(item)]
+            if item == 'ship-address-3':
+                self.shipToddress3=res[self.headers.index(item)]
+            if item == 'ship-city':
+                self.shipToCity=res[self.headers.index(item)]
+            if item == 'ship-state':
+                self.shipToState=res[self.headers.index(item)]
+            if item == 'ship-postal-code':
+                self.shipToZip=res[self.headers.index(item)]
+            if item == 'ship-country':
+                self.shipToCntry=res[self.headers.index(item)]
+            if item == 'carrier':
+                self.carrier=res[self.headers.index(item)]
+            if item == 'pack-slip-type':
+                self.packSlipType=res[self.headers.index(item)]
+        return(0)
+    
+    def read_amazon_line(self):
+        self.type='Amazon'
+        res=re.split(self.sep, self.record.rstrip())
+        if self.record[-2:-1]==self.sep:
+            res.append('')
+        if len(res) != len(self.headers):
+            # improperly formatted line
+            if len(res) > len(self.headers):
+                # the line is too long
+                return(-1)
+            # assume that there are empty cells at the end of the line, just add empty strings
+            for indx in range(len(self.headers)-len(res)):
+                res.append('')
+        for item in self.headers:
+            if item == 'buyer-name':
+                self.shipToName=res[self.headers.index(item)]
+            if item == 'buyer-email':
+                self.buyerEmail=res[self.headers.index(item)]
+            if item == 'sku':
+                self.sku=res[self.headers.index(item)]
+            if item == 'product-name':
+                self.productName=res[self.headers.index(item)]
+            if item == 'purchase-date':
+                self.purchaseDate=res[self.headers.index(item)]
+            if item == 'order-id':
+                self.orderId=res[self.headers.index(item)]
+            if item == 'quantity-purchased':
+                self.quantity=res[self.headers.index(item)]
+            if item == 'ship-service-level':
+                self.serviceLevel=res[self.headers.index(item)]
+            if item == 'recipient-name':
+                self.shipToName=res[self.headers.index(item)]
+            if item == 'ship-address-1':
+                self.shipToAddress1=res[self.headers.index(item)]
+            if item == 'ship-address-2':
+                self.shipToAddress2=res[self.headers.index(item)]
+            if item == 'ship-address-3':
+                self.shipToAddress3=res[self.headers.index(item)]
+            if item == 'ship-city':
+                self.shipToCity=res[self.headers.index(item)]
+            if item == 'ship-state':
+                self.shipToState=res[self.headers.index(item)]
+            if item == 'ship-postal-code':
+                self.shipToZip=res[self.headers.index(item)]
+            if item == 'ship-country':
+                self.shipToCntry=res[self.headers.index(item)]
+            if item == 'carrier':
+                self.carrier=res[self.headers.index(item)]
+            if item == 'pack-slip-type':
+                self.packSlipType=res[self.headers.index(item)]
+        
+        #self.parse_amazon_date()
+        return(0)
+    
+    def parse_amazon_date(self):
+        #format: 2014-09-08T13:08:30-07:00
+        try:
+            pieces=re.split(r'T',self.purchaseDate)
+            ymd=re.split(r'-',pieces[0])
+            timeGmt=re.split(r'[+-]',pieces[1])
+            #drop off final number separated by a +/-.  Is it some GMT adder?
+            # doesn't seem to correlate with actual timezone of purchaser
+            self.purchaseDate=ymd[1]+'/'+ymd[2]+'/'+ymd[0]+' '+timeGmt[0]
+        except:
+            self.purchaseDate='00/00/00 00:00:00'
     
 class PH(models.Model):
     '''
@@ -489,7 +653,7 @@ class PH(models.Model):
             self.SHIPTO_CNTRY == '' or self.SHIPTO_ZIP == '' or self.PH1_FREIGHT_TERMS == '' or 
             self.ORD_TYPE == '' or self.SHIP_VIA == '' or self.PKT_CTRL_NBR == '' or 
             self.PHI_SPL_INSTR_NBR == '' or self.PHI_SPL_INSTR_TYPE == '' or self.PHI_SPL_INSTR_CODE == ''):
-            errorLine='PARSE ERROR: missing data:\n\t'
+            errorLine='PARSE ERROR (PH): missing data:\n\t'
             if self.PH1_CUST_PO_NBR == '':
                 errorLine+='"Customer PO # (ordere #)" missing, '
             if self.SHIPTO_NAME == '':
@@ -600,8 +764,6 @@ class PD(models.Model):
                                         # opt. PD2 section
                                         # opt. PD3 section
                                         # opt. PDI section
-
-
     
     def __unicode__(self):
         return "PD instance"
@@ -620,8 +782,8 @@ class PD(models.Model):
     
     def check_line(self):
         errorLine=''
-        if self.CUST_SKU == '' or self.ORIG_ORD_QTY == '' or self.PKT_SEQ_NBR:
-            errorLine='PARSE ERROR: missing data:\n\t'
+        if self.CUST_SKU == '' or self.ORIG_ORD_QTY == '' or self.PKT_SEQ_NBR == '':
+            errorLine='PARSE ERROR (PD): missing data:\n\t'
             if self.CUST_SKU == '':
                 errorLine+='"SKU" missing, '
             if self.ORIG_ORD_QTY == '':
@@ -630,198 +792,6 @@ class PD(models.Model):
                 errorLine+='"Pickticket Sequence Number" missing, '
         return(errorLine)
     
-class CustOrder(models.Model):
-    '''
-    UPS customer order line item
-    This is holds information parsed from a CustOrderQueryRow and is used
-    to feed information into a PickTicket instance
-    '''
-    
-    headers=[] # holds headers in order read from file
-    sep=models.CharField(max_length=1,default='\t')
-    ups_pkt=models.ForeignKey(PickTicket, blank=True)
-    queryLineNo=models.IntegerField(default=0)
-    queryName=models.URLField(default='')
-    type=models.CharField(max_length=20, default='')
-    purchaseDate=models.DateTimeField(blank=True)
-    orderId=models.CharField(max_length=50, default='')
-    shipToName=models.CharField(max_length=50, default='')
-    shipToAddress1=models.CharField(max_length=100, default='')
-    shipToAddress2=models.CharField(max_length=100, default='')
-    shipToAddress3=models.CharField(max_length=100, default='')
-    shipToCity=models.CharField(max_length=100,default='')
-    shipToState=models.CharField(max_length=100,default='')
-    shipToZip=models.CharField(max_length=100,default='')
-    shipToCntry=models.CharField(max_length=100,default='')
-    packSlipType=models.CharField(max_length=50,default='')
-    carrier=models.CharField(max_length=50,default='')
-    orderType=models.CharField(max_length=50,default='')
-    serviceLevel=models.CharField(max_length=50,default='')
-    buyerEmail=models.EmailField(max_length=254,default='')
-    sku=models.CharField(max_length=50,default='')
-    productName=models.CharField(max_length=500,default='')
-    quantity=models.IntegerField(default=0)
-    parseError=models.TextField(default='')
-    
-    def __unicode__(self):
-        return 'CustOrder instance'
-    
-    def read_header(self,line):
-        self.headers=re.split(self.sep, line.rstrip())
-        
-    def read_zen_line(self,line):
-        self.type='Zen'
-        res=re.split(self.sep, line.rstrip())
-        if line[-2:-1]==self.sep:
-            res.append('')
-        if len(res) != len(self.headers):
-            return(-1) # improperly formatted line
-        for item in self.headers:
-            if item == 'v_date_purchased':
-                self.purchaseDate=res[self.headers.index(item)]
-            if item == 'v_orders_id':
-                self.orderId=res[self.headers.index(item)]
-            if item == 'v_customers_name':
-                self.shipToName=res[self.headers.index(item)]
-            if item == 'v_customers_street_address':
-                self.shipToAddress1=res[self.headers.index(item)]
-            if item == 'v_customers_suburb':
-                self.shipToAddress2=res[self.headers.index(item)]
-            if item == 'v_customers_city':
-                self.shipToCity=res[self.headers.index(item)]
-            if item == 'v_customers_postcode':
-                self.shipToZip=res[self.headers.index(item)]
-            if item == 'v_customers_country':
-                self.shipToCntry=res[self.headers.index(item)]
-            if item == 'v_customers_email_address':
-                self.buyerEmail=res[self.headers.index(item)]
-            if item == 'v_products_model':
-                self.sku=res[self.headers.index(item)]
-            if item == 'v_products_name':
-                self.productName=res[self.headers.index(item)]
-        #self.parse_zen_date()
-        return(0)
-        
-    def parse_zen_date(self):
-        #format: 2014-08-14 14:20:46
-        try:
-            pieces=re.split(r' ',self.purchaseDate)
-            ymd=re.split(r'-',pieces[0])
-            #drop off final number separated by a +/-.  Is it some GMT adder?
-            # doesn't seem to correlate with actual timesone of purchaser
-            self.purchaseDate=ymd[1]+'/'+ymd[2]+'/'+ymd[0]+' '+pieces[1]
-        except:
-            self.purchaseDate='00/00/00 00:00:00'
-    
-    def read_ss_line(self,line):
-        self.type='SS'
-        res=re.split(self.sep, line.rstrip())
-        if len(res) != len(self.headers):
-            # improperly formatted line
-            if len(res) > len(self.headers):
-                # the line is too long
-                return(-1)
-            # assume that there are empty cells at the end of the line, just add empty strings
-            for indx in range(len(self.headers)-len(res)):
-                res.append('')
-        for item in self.headers:
-            if item == 'sku':
-                self.sku=res[self.headers.index(item)]
-            if item == 'product-name':
-                self.productName=res[self.headers.index(item)]
-            if item == 'order-id':
-                self.orderId=res[self.headers.index(item)]
-            if item == 'order-type':
-                self.orderType=res[self.headers.index(item)]
-            if item == 'quantity-purchased':
-                self.quantity=res[self.headers.index(item)]
-            if item == 'purchase-date':
-                self.purchaseDate=res[self.headers.index(item)]
-            if item == 'ship-service-level':
-                self.serviceLevel=res[self.headers.index(item)]
-            if item == 'recipient-name':
-                self.shipToName=res[self.headers.index(item)]
-            if item == 'buyer-email':
-                self.buyerEmail=res[self.headers.index(item)]
-            if item == 'ship-address-1':
-                self.shipToAddress1=res[self.headers.index(item)]
-            if item == 'ship-address-2':
-                self.shipToAddress2=res[self.headers.index(item)]
-            if item == 'ship-address-3':
-                self.shipToddress3=res[self.headers.index(item)]
-            if item == 'ship-city':
-                self.shipToCity=res[self.headers.index(item)]
-            if item == 'ship-state':
-                self.shipToState=res[self.headers.index(item)]
-            if item == 'ship-postal-code':
-                self.shipToZip=res[self.headers.index(item)]
-            if item == 'ship-country':
-                self.shipToCntry=res[self.headers.index(item)]
-            if item == 'carrier':
-                self.carrier=res[self.headers.index(item)]
-            if item == 'pack-slip-type':
-                self.packSlipType=res[self.headers.index(item)]
-        return(0)
-    
-    def read_amazon_line(self,line):
-        self.type='Amazon'
-        res=re.split(self.sep, line.rstrip())
-        if line[-2:-1]==self.sep:
-            res.append('')
-        if len(res) != len(self.headers):
-            return(-1) # improperly formatted line
-        for item in self.headers:
-            if item == 'buyer-name':
-                self.shipToName=res[self.headers.index(item)]
-            if item == 'buyer-email':
-                self.buyerEmail=res[self.headers.index(item)]
-            if item == 'sku':
-                self.sku=res[self.headers.index(item)]
-            if item == 'product-name':
-                self.productName=res[self.headers.index(item)]
-            if item == 'purchase-date':
-                self.purchaseDate=res[self.headers.index(item)]
-            if item == 'order-id':
-                self.orderId=res[self.headers.index(item)]
-            if item == 'quantity-purchased':
-                self.quantity=res[self.headers.index(item)]
-            if item == 'ship-service-level':
-                self.serviceLevel=res[self.headers.index(item)]
-            if item == 'recipient-name':
-                self.shipToName=res[self.headers.index(item)]
-            if item == 'ship-address-1':
-                self.shipToAddress1=res[self.headers.index(item)]
-            if item == 'ship-address-2':
-                self.shipToAddress2=res[self.headers.index(item)]
-            if item == 'ship-address-3':
-                self.shipToAddress3=res[self.headers.index(item)]
-            if item == 'ship-city':
-                self.shipToCity=res[self.headers.index(item)]
-            if item == 'ship-state':
-                self.shipToState=res[self.headers.index(item)]
-            if item == 'ship-postal-code':
-                self.shipToZip=res[self.headers.index(item)]
-            if item == 'ship-country':
-                self.shipToCntry=res[self.headers.index(item)]
-            if item == 'carrier':
-                self.carrier=res[self.headers.index(item)]
-            if item == 'pack-slip-type':
-                self.packSlipType=res[self.headers.index(item)]
-        
-        #self.parse_amazon_date()
-        return(0)
-    
-    def parse_amazon_date(self):
-        #format: 2014-09-08T13:08:30-07:00
-        try:
-            pieces=re.split(r'T',self.purchaseDate)
-            ymd=re.split(r'-',pieces[0])
-            timeGmt=re.split(r'[+-]',pieces[1])
-            #drop off final number separated by a +/-.  Is it some GMT adder?
-            # doesn't seem to correlate with actual timezone of purchaser
-            self.purchaseDate=ymd[1]+'/'+ymd[2]+'/'+ymd[0]+' '+timeGmt[0]
-        except:
-            self.purchaseDate='00/00/00 00:00:00'
 
 
 class ShipmentOrderReport(models.Model):

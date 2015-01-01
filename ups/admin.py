@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from ups.models import PickTicket, PD, PH, ShipmentOrderRow, ShipmentOrderReport, CustOrder, CustOrderQueryRow
+from ups.models import PickTicket, PD, PH, ShipmentOrderRow, ShipmentOrderReport, CustOrderQueryRow
 
 
 
@@ -23,5 +23,4 @@ admin.site.register(PD)
 admin.site.register(PH)
 admin.site.register(ShipmentOrderRow)
 admin.site.register(ShipmentOrderReport)
-admin.site.register(CustOrder)
 admin.site.register(CustOrderQueryRow)

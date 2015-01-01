@@ -2,7 +2,7 @@ from django.shortcuts import render, get_object_or_404, render_to_response
 from django.http import HttpResponseRedirect
 from django.core.urlresolvers import reverse
 from django.views import generic
-from ups.models import mirai_check_args, mirai_get_files, mirai_initialize_ups_pkt, CustOrder, CustOrderQueryRow, PD, PH, PickTicket, ShipmentOrderRow, ShipmentOrderReport
+from ups.models import mirai_check_args, mirai_get_files, mirai_initialize_ups_pkt, CustOrderQueryRow, PD, PH, PickTicket, ShipmentOrderRow, ShipmentOrderReport
 from ups.forms import FileNameForm
 import time
 import datetime
@@ -40,14 +40,14 @@ def file_selection(request):
                 return render(request, 'ups/file_selection.html', {
                     'error_message': "Problem with the files.",
                 })
-            ups_pkt=mirai_initialize_ups_pkt(files,inputType)
-#             if status == -1:
-#                 return render(request, 'ups/file_selection.html', {
-#                     'error_message': "Problem with the files.",
-#                 })
+            ups_pkt_id=mirai_initialize_ups_pkt(files,inputType)
+            if ups_pkt_id == -1:
+                return render(request, 'ups/file_selection.html', {
+                    'error_message': "Problem with the files.",
+                })
             #
             # redirect to a new URL:)
-            return HttpResponseRedirect(reverse('ups:file_creation',args=ups_pkt.id, kwargs={'ups_pkt':ups_pkt}))
+            return HttpResponseRedirect(reverse('ups:file_creation',args=[ups_pkt_id,]))
     # if a GET (or any other method) we'll create a blank form
     else:
         form=FileNameForm()

@@ -2,4 +2,5 @@
 {% load staticfiles %}
 {% block content %}
     ups_pkt id = {{ ups_pkt.id }}
+    ups_pkt filename= {{ ups_pkt.fileName }}
 {% endblock content %}
