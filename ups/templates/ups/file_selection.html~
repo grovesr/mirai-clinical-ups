@@ -5,6 +5,7 @@
     <script src="{% static 'ups/js/chooser.js' %}"></script>
 {% endblock extra_scripts %}
 {% block content %}
+{% if error_message %}<p><strong>{{ error_message }}</strong></p>{% endif %}
     <div id="container">
         {# buttons go here #}
     </div>
@@ -15,8 +16,6 @@
         <form action="{% url 'ups:file_selection' %}" method="post">
             {% csrf_token %}
             {{ form }}
-            <input 
-        <input type="submit" value="Submit" />
     </div>
 </form>
 {% endblock content %}

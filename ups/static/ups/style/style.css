@@ -1,0 +1,17 @@
+p#pktId {
+    color:blue;
+}
+
+a:visited{
+	color:#156641
+}
+
+a:active,a:focus,a:hover{
+	color:#1d915c
+}
+
+ul.phItems, ul.parseErrors, ul.sidebar {
+    list-style-type:none;
+    list-style-position: inside;
+}
+

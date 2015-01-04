@@ -16,8 +16,6 @@
         <form action="{% url 'ups:file_selection' %}" method="post">
             {% csrf_token %}
             {{ form }}
-            <input 
-        <input type="submit" value="Submit" />
+        </form>
     </div>
-</form>
 {% endblock content %}

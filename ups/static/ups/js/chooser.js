@@ -1,22 +1,32 @@
 "use strict";
 $(document).ready(function(){
-    $("#container").append(saverButton);
+    //$("#container").append(saverButton);
     $("#container").append(chooserButton);
 });
 var chooserOptions = {
 
     // Required. Called when a user selects an item in the Chooser.
     success: function(files) {
-	    var file_string='';
+	    var fileString='';
+	    var fileListItem='';
 	    // string of returned urls
+	    if (files.length > 0) {
+	        $("#file_list").before($("<p></p>").text("List of Selected Files:"));
+	        $("#id_files").after($("<input></input>").attr('type="Input"'));
+	        $("form").append('<input type="submit" value="Create">');
+	        $(".dropbox-dropin-btn").hide();
+	    }
 	    files.forEach(function(filename) {
-	        file_string += filename.link + '&';
+	        // create ampersand separated list of URLs
+	        fileString += filename.link + '&';
+	        // display the URLs
+	        fileListItem=$("<li></li>").text(filename.link);
+	        $("#file_list").append(fileListItem);
 	    } );// end foreachfunction
-	    file_string=file_string.slice(0,-1);
-	    $("#id_files").attr("value",file_string);
-	    //$("#id_file_url").val(get_args[0]);
-	    //$.get("file_selection",{'num_files':files.length});
-	    //$("#returned_files").append(get_args);
+	    // strip off the final ampersand
+	    fileString=fileString.slice(0,-1);
+	    // set the hidden form element value so we can submit it
+	    $("#id_files").attr("value",fileString);	    
     }, // success function
 
     // Optional. Called when the user closes the dialog without selecting a file

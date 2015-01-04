@@ -8,9 +8,9 @@ import os
 import xlrd
 
 def debug_setup():
-    files=['https://dl.dropboxusercontent.com/1/view/l7twoxgvfjfx9de/Mirai/ShipOrders/SS_1640116e-7523-4d6a-879d-4644e7f48001.csv']
-    files.append('https://dl.dropboxusercontent.com/1/view/ke2sxieecxur5x2/Mirai/ShipOrders/SS_withErrors.csv')
-    files.append('https://dl.dropboxusercontent.com/1/view/qckfuzgdicjkctc/Mirai/ShipOrders/unshipped_amazon.txt')
+    files=['https://dl.dropboxusercontent.com/1/view/8nxrlg3knbckyd8/Mirai/ShipOrders/SS_1640116e-7523-4d6a-879d-4644e7f48001.csv']
+    #files.append('https://dl.dropboxusercontent.com/1/view/ke2sxieecxur5x2/Mirai/ShipOrders/SS_withErrors.csv')
+    #files.append('https://dl.dropboxusercontent.com/1/view/qckfuzgdicjkctc/Mirai/ShipOrders/unshipped_amazon.txt')
     inputType=mirai_check_args(files)
     ups_pkt=mirai_initialize_ups_pkt(files, inputType)
     return ups_pkt
@@ -55,7 +55,7 @@ def mirai_get_files(inputType,args):
                         files[fStr.name]=fStr.read()
                 except:
                     # failed to open file
-                    files[poFile]=['FILE ERROR: unable to open file "' + poFile + '"']
+                    files[poFile]=['FILE ERROR: unable to open file "' + poFile + '"&']
     if inputType == 3:
         # URLs
         for poUrl in args:
@@ -63,7 +63,7 @@ def mirai_get_files(inputType,args):
                 urlStr = urllib2.urlopen(poUrl)
                 files[urlStr.url]=urlStr.read()
             except:
-                files[poUrl]=['URL ERROR: unable to open URL "' + poUrl + '"']
+                files[poUrl]=['URL ERROR: unable to open URL "' + poUrl + '"&']
     return files
 
 def mirai_initialize_ups_pkt(files,inputType):
@@ -73,14 +73,13 @@ def mirai_initialize_ups_pkt(files,inputType):
     warehouse='SD4'
     company='MIRAI'
     division='001'
-    upsShipOrderDir = 'UPS/UpsShipmentOrders'
     timeStamp=time.time()
     fileTimeStamp=timezone.datetime.fromtimestamp(timeStamp).strftime('%y%m%d%H%M%S')
     rand='{:010}'.format(random.randrange(1,999999999,1))
     div='001'
-    fileName=upsShipOrderDir+os.sep+warehouse+company+div+'_FF_PICKTIKET_'+rand+'_'+fileTimeStamp
+    fileName=warehouse+company+div+'_FF_PICKTICKET_'+rand+'_'+fileTimeStamp
     ups_pkt=PickTicket()
-    ups_pkt.DOC_DATE=timezone.datetime.fromtimestamp(timeStamp).strftime('%m/%d/%y %H:%M:%S')
+    ups_pkt.DOC_DATE=timezone.now()
     ups_pkt.warehouse=warehouse
     ups_pkt.CMPY_NAME=company
     ups_pkt.division=division
@@ -97,25 +96,30 @@ def mirai_initialize_ups_pkt(files,inputType):
         for fileLine in contents.splitlines():
             if header:
                 # assume header is the first line
-                queryRowHeaders=fileLine.rstrip()
+                queryHeader=CustOrderHeader()
+                queryHeader.headers=fileLine.rstrip()
+                queryHeader.ups_pkt=ups_pkt
+                queryHeader.query=f
+                queryHeader.save()
                 header=False
             else:
                 queryRow=CustOrderQueryRow()
+                queryRow.coHeader=queryHeader
                 queryRow.ups_pkt=ups_pkt
                 queryRow.record=fileLine
                 queryRow.queryRecordNumber=recordNumber
                 queryRow.queryId=queryFileTimeStamp
                 queryRow.query=f
-                queryRow.headers=re.split(queryRow.sep, queryRowHeaders)
-                if reMatchZen.match(queryRowHeaders):
+                queryRow.headers=re.split(queryRow.sep, queryRow.coHeader.headers)
+                if reMatchZen.match(queryRow.coHeader.headers):
                     result=queryRow.read_zen_line()
-                if reMatchSS.match(queryRowHeaders):
+                if reMatchSS.match(queryRow.coHeader.headers):
                     result=queryRow.read_ss_line()
-                if reMatchAmazon.match(queryRowHeaders):
+                if reMatchAmazon.match(queryRow.coHeader.headers):
                     result=queryRow.read_amazon_line()
                 if result < 0:
                     # improperly formatted record
-                    queryRow.parseError='PARSE ERROR: improperly formatted line'
+                    queryRow.parseError='PARSE ERROR: improperly formatted line&'
                 queryRow.save()
             recordNumber+=1
     result=ups_pkt.parse_po_objects()
@@ -135,7 +139,7 @@ class PickTicket(models.Model):
     HDR_REC_TYPE=models.CharField(max_length=3, default='HDR')              # 3 char
     DOC_TYPE=models.CharField(max_length=10, default='PICKTICKET')           # 10 char
     CMPY_NAME=models.CharField(max_length=20, default='')                    # 20 char
-    DOC_DATE=models.CharField(max_length=17, default=timezone.now().strftime('%m/%d/%y %H:%M:%S'))                     # 17 char MM/DD/YY HH:MM:SS
+    DOC_DATE=models.DateTimeField(default=timezone.now())                    # 17 char MM/DD/YY HH:MM:SS
     division=models.CharField(max_length=10,default='')
     warehouse=models.CharField(max_length=3,default='')
     # need accessor for TRANS_ID
@@ -153,7 +157,7 @@ class PickTicket(models.Model):
     
     def hdr(self):
         return((self.HDR_REC_TYPE+self.SEP+self.DOC_TYPE+self.SEP+self.CMPY_NAME+self.SEP+
-                self.DOC_DATE+self.SEP+self.trans_id()))
+                self.DOC_DATE.strftime("%m/%d/%y %H:%M:%S")+self.SEP+self.trans_id()))
         
     def ph(self):
         phStr=''
@@ -187,11 +191,11 @@ class PickTicket(models.Model):
         orderIds=CustOrderQueryRow.objects.filter(ups_pkt=self.id).values('orderId').distinct()
         #for each order query row within a unique orderId (may consist of multiple order lines)
         for orderId in orderIds:
-            coLines=CustOrderQueryRow.objects.filter(orderId=orderId['orderId'])
+            phItem=PH()
+            coLines=CustOrderQueryRow.objects.filter(orderId=orderId['orderId']).filter(ups_pkt=self.id)
             #for each custOrder line with a given unique orderId
             for coLine in coLines:
                 phIndex+=2
-                phItem=PH()
                 phItem.WHSE=self.warehouse[:3]
                 phItem.CO=self.CMPY_NAME[:10]
                 phItem.DIV=self.division[:10]
@@ -203,10 +207,11 @@ class PickTicket(models.Model):
                 phItem.PHI_SPL_INSTR_NBR='{:03}'.format(phIndex)
                 phItem.PHI_SPL_INSTR_TYPE='QV'
                 phItem.PHI_SPL_INSTR_CODE='01,08'
+                phItem.coHeader=coLine.coHeader
                 phItem.ups_pkt=self
                 if phItem.parse(coLine) < 0:
                     # unable to create a PH object from this. Append to any errors already 
-                    coLine.parseError+='PARSE ERROR: Unable to create PH item: from CustOrder'
+                    coLine.parseError+='PARSE ERROR: Unable to create PH item: from CustOrder&'
                     coLine.save()
                 else:
                     itemIndex+=1
@@ -221,86 +226,123 @@ class PickTicket(models.Model):
                     phItem.save()
         return 0
     
-    def parse_report(self):
-        fileErrors=[]
-        lineParseErrors=[]
-        reportStr='Report for file "'+self.fileName+'.txt"\n\n'
-        for key,value in self.parseErrors.iteritems():
-            for errorLine in value:
-                if re.split(r':',errorLine)[0] == 'FILE ERROR':
-                    fileErrors.append(errorLine)
-                if re.split(r':',errorLine)[0] == 'PARSE ERROR':
-                    fileErrors.append(errorLine)
-                if re.split(r':',errorLine)[0] == 'URL ERROR':
-                    fileErrors.append(errorLine)
-        for fileError in fileErrors:
-            reportStr+=fileError+'\n'
-        reportStr+='\n'
-        for lineParseError in lineParseErrors:
-            reportStr+=lineParseError+'\n'
-        reportStr+='\n'
-        for phItem in self.PH:
-            reportStr+='Customer: '+phItem.SHIPTO_NAME+'\n'
-            reportStr+='\tFile: '+phItem.fromFile+'\n'
-            reportStr+='\tDate: '+phItem.PH1_ORD_DATE+'\n'
-            reportStr+='\tOrder #: '+phItem.PH1_CUST_PO_NBR+'\n'
-            reportStr+='\tAddress:\n'
-            reportStr+='\t\t'+phItem.SHIPTO_ADDR_1+'\n'
-            if phItem.SHIPTO_ADDR_2 != "":
-                reportStr+='\t\t'+phItem.SHIPTO_ADDR_2+'\n'
-            if phItem.SHIPTO_ADDR_3 != "":
-                reportStr+='\t\t'+phItem.SHIPTO_ADDR_3+'\n'
-            reportStr+='\t\t'+phItem.SHIPTO_CITY+', '+phItem.SHIPTO_STATE+', '+phItem.SHIPTO_ZIP+', '+phItem.SHIPTO_CNTRY+'\n'
-            reportStr+='\tItems:\n'
-            for pdItem in phItem.PD:
-                reportStr+='\t\t('+pdItem.ORIG_ORD_QTY+') '+pdItem.SIZE_DESC+' (SKU:'+pdItem.CUST_SKU+', file line #: '+str(pdItem.fileLineNo)+')\n'
-            reportStr+='\n'
-        return(reportStr)
+    def parse_html_error_report(self):
+        reMatchParseError=re.compile('.*PARSE ERROR.*')
+        reMatchFileError=re.compile('.*FILE ERROR.*')
+        reMatchURLError=re.compile('.*URL ERROR.*')
+        reportHtml=''
+        # get the ids of the file(s) used to create this pickticket 
+        orderIds=CustOrderQueryRow.objects.filter(ups_pkt=self.id).values('queryId').distinct()
+        reportHtml+='<p><ul class="parseErrors">'
+        for orderId in orderIds:
+        # for each file check to see if any errors were generated
+            errorRows=CustOrderQueryRow.objects.filter(queryId=orderId['queryId']).filter(parseError__contains='ERROR')
+            if len(errorRows)>0:
+                # found some errors with this file
+                reportHtml+='<li>Parse errors for file '+errorRows[0].query
+                reportHtml+='<ul class="parseErrors">'
+                for errorRow in errorRows:
+                    parseList=errorRow.parseError.split('&')
+                    if parseList[-1] == '':
+                        parseList=parseList[:-1]
+                    print parseList[:-1]
+                    # assume the errors come in title/value pairs
+                    for parseError in parseList:
+                        if reMatchParseError.match(parseError) or reMatchFileError.match(parseError) or reMatchURLError.match(parseError):
+                            reportHtml+='<li>'+parseError+'<ul class="parseErrors">'
+                        else:
+                            reportHtml+='<li>'+parseError+' file line #: '+str(errorRow.queryRecordNumber)+'</li>'
+                            reportHtml+='</ul></li>'
+                reportHtml+='</ul>'
+                reportHtml+='</li>'
+        reportHtml+='</ul></p>'
+        return reportHtml
     
-    def parse_pkt_report(self):
-        fileErrors=[]
-        lineParseErrors=[]
-        reportStr='Report for file "'+self.fileName+'.txt"\n\n'
-        for key,value in self.parseErrors.iteritems():
-            for errorLine in value:
-                if re.split(r':',errorLine)[0] == 'FILE ERROR':
-                    fileErrors.append(errorLine)
-                if re.split(r':',errorLine)[0] == 'PARSE ERROR':
-                    fileErrors.append(errorLine)
-                if re.split(r':',errorLine)[0] == 'URL ERROR':
-                    fileErrors.append(errorLine)
-        for fileError in fileErrors:
-            reportStr+=fileError+'\n'
-        reportStr+='\n'
-        for lineParseError in lineParseErrors:
-            reportStr+=lineParseError+'\n'
-        reportStr+='\n'
-        for phItem in self.PH:
-            reportStr+='Customer: '+phItem.SHIPTO_NAME+'\n'
-            reportStr+='\tAddress:\n'
-            reportStr+='\t\t'+phItem.SHIPTO_ADDR_1+'\n'
+    def parse_html_pkt_report(self):
+        reportHtml=''
+        reportHtml+='<p>PH Items:' # open phItems paragraph
+        # we have recorded the errors, now let's output the report for each order
+        for phItem in PH.objects.filter(ups_pkt=self.id):
+            reportHtml+='<ul class="phItems">' # open customer main list
+            reportHtml+='<li>Customer: '+phItem.SHIPTO_NAME+'' # open main customer list item
+            reportHtml+='<ul class="phItems">' # open first list within customer
+            reportHtml+='<li>File: '+phItem.coHeader.query+'</li>'
+            reportHtml+='<li>Order Date: '+phItem.PH1_ORD_DATE.strftime('%m/%d/%y %H:%M:%S')+'</li>'
+            reportHtml+='<li>Order #: '+phItem.PH1_CUST_PO_NBR+'</li>'
+            reportHtml+='<li>Address:' # open customer address list item, end span phSub1
+            reportHtml+='<ul class="phItems">' # open list within customer address
+            reportHtml+='<li>'+phItem.SHIPTO_ADDR_1+'</li>'
             if phItem.SHIPTO_ADDR_2 != "":
-                reportStr+='\t\t'+phItem.SHIPTO_ADDR_2+'\n'
+                reportHtml+='<li>'+phItem.SHIPTO_ADDR_2+'</li>'
             if phItem.SHIPTO_ADDR_3 != "":
-                reportStr+='\t\t'+phItem.SHIPTO_ADDR_3+'\n'
-            reportStr+='\t\t'+phItem.SHIPTO_CITY+', '+phItem.SHIPTO_STATE+', '+phItem.SHIPTO_ZIP+', '+phItem.SHIPTO_CNTRY+'\n'
-            reportStr+='\tPH1_CUST_PO_NBR: '+phItem.PH1_CUST_PO_NBR+'\n'
-            reportStr+='\tSHIP_VIA: '+phItem.SHIP_VIA+'\n'
-            reportStr+='\tORD_TYPE: '+phItem.ORD_TYPE+'\n'
-            reportStr+='\tPKT_CNTRL_NBR: '+phItem.PKT_CTRL_NBR+'\n'
-            reportStr+='\tPH1_PROD_VALUE: '+phItem.PH1_PROD_VALUE+'\n'
-            reportStr+='\tPH1_FREIGHT_TERMS: '+phItem.PH1_FREIGHT_TERMS+'\n'
-            for code in phItem.PHI_SPL_INSTR_CODE:
-                reportStr+='\tPHI_SPL_INSTR_CODE: '+code+'\n'
-            reportStr+='\tPHI_SPL_INSTR_DESC: '+phItem.PHI_SPL_INSTR_DESC+'\n'
-            reportStr+='\tItems:\n'
-            for pdItem in phItem.PD:
-                reportStr+='\t\tPKT_SEQ_NBR: '+pdItem.PKT_SEQ_NBR+'\n'
-                reportStr+='\t\tORIG_ORD_QTY: '+pdItem.ORIG_ORD_QTY+'\n'
-                reportStr+='\t\tPKT_ORD_QTY: '+pdItem.ORIG_PKT_QTY+'\n'
-                reportStr+='\t\tCUST_SKU: '+pdItem.CUST_SKU+'\n\n'
-            reportStr+='\n'
-        return(reportStr)
+                reportHtml+='<li>'+phItem.SHIPTO_ADDR_3+'</li>'
+            reportHtml+='<li>'+phItem.SHIPTO_CITY+', '+phItem.SHIPTO_STATE+', '+phItem.SHIPTO_ZIP+', '+phItem.SHIPTO_CNTRY+'</li></span>'
+            reportHtml+='</ul>' # end list within customer address
+            reportHtml+='</li>' # end customer address list item
+            reportHtml+='<li>PH1_CUST_PO_NBR: '+phItem.PH1_CUST_PO_NBR+'</li>'
+            reportHtml+='<li>SHIP_VIA: '+phItem.SHIP_VIA+'</li>'
+            reportHtml+='<li>ORD_TYPE: '+phItem.ORD_TYPE+'</li>'
+            reportHtml+='<li>PKT_CNTRL_NBR: '+phItem.PKT_CTRL_NBR+'</li>'
+            reportHtml+='<li>PH1_PROD_VALUE: '+phItem.PH1_PROD_VALUE+'</li>'
+            reportHtml+='<li>PH1_FREIGHT_TERMS: '+phItem.PH1_FREIGHT_TERMS+'</li>'
+            for code in phItem.PHI_SPL_INSTR_CODE.split(r','):
+                reportHtml+='<li>PHI_SPL_INSTR_CODE: '+code+'</li>'
+            reportHtml+='<li>Items:' # open customer items list
+            reportHtml+='<ul class="phItems">' # open list within customer items
+            for pdItem in PD.objects.filter(ups_ph=phItem.id):
+                reportHtml+='<li>PKT_SEQ_NBR: '+pdItem.PKT_SEQ_NBR+'</li>'
+                reportHtml+='<li>ORIG_ORD_QTY: '+pdItem.ORIG_ORD_QTY+'</li>'
+                reportHtml+='<li>PKT_ORD_QTY: '+pdItem.ORIG_PKT_QTY+'</li>'
+                reportHtml+='<li>CUST_SKU: '+pdItem.CUST_SKU+'</li>'
+            reportHtml+='</ul>' # end list within customer items
+            reportHtml+='</ul>' # close main list within customer
+            reportHtml+='</li>' # close main customer list item
+            reportHtml+='</ul>' # close main customer list
+            reportHtml+='</p>' # close PhItems paragraph
+        return reportHtml
+    
+    def parse_html_report(self):
+        reportHtml=''
+        reportHtml+='<p>PH Items:' # open phItems paragraph
+        # we have recorded the errors, now let's output the report for each order
+        for phItem in PH.objects.filter(ups_pkt=self.id):
+            reportHtml+='<ul class="phItems">' # open customer main list
+            reportHtml+='<li>Customer: '+phItem.SHIPTO_NAME+'' # open main customer list item
+            reportHtml+='<ul class="phItems">' # open first list within customer
+            reportHtml+='<li>File: '+phItem.coHeader.query+'</li>'
+            reportHtml+='<li>Order Date: '+phItem.PH1_ORD_DATE.strftime('%m/%d/%y %H:%M:%S')+'</li>'
+            reportHtml+='<li>Order #: '+phItem.PH1_CUST_PO_NBR+'</li>'
+            reportHtml+='<li>Address:' # open customer address list item, end span phSub1
+            reportHtml+='<ul class="phItems">' # open list within customer address
+            reportHtml+='<li>'+phItem.SHIPTO_ADDR_1+'</li>'
+            if phItem.SHIPTO_ADDR_2 != "":
+                reportHtml+='<li>'+phItem.SHIPTO_ADDR_2+'</li>'
+            if phItem.SHIPTO_ADDR_3 != "":
+                reportHtml+='<li>'+phItem.SHIPTO_ADDR_3+'</li>'
+            reportHtml+='<li>'+phItem.SHIPTO_CITY+', '+phItem.SHIPTO_STATE+', '+phItem.SHIPTO_ZIP+', '+phItem.SHIPTO_CNTRY+'</li></span>'
+            reportHtml+='</ul>' # end list within customer address
+            reportHtml+='</li>' # end customer address list item
+            reportHtml+='<li>Items:' # open customer items list
+            reportHtml+='<ul class="phItems">' # open list within customer items
+            for pdItem in PD.objects.filter(ups_ph=phItem.id):
+                reportHtml+='<li>('+pdItem.ORIG_ORD_QTY+') '+pdItem.SIZE_DESC+' (SKU:'+pdItem.CUST_SKU+', file line #: '+str(pdItem.coQueryRow.queryRecordNumber)+')</li>'
+            reportHtml+='</ul>' # end list within customer items
+            reportHtml+='</ul>' # close main list within customer
+            reportHtml+='</li>' # close main customer list item
+            reportHtml+='</ul>' # close main customer list
+            reportHtml+='</p>' # close PhItems paragraph
+        return reportHtml
+    
+class CustOrderHeader(models.Model):
+    """
+    Headers for parsing a file when creating CustOrderQueryRows
+    """
+    headers=models.TextField(default='')# holds headers in order read from file
+    ups_pkt=models.ForeignKey(PickTicket)
+    query=models.CharField(max_length=1024, default='')
+    
+    def read_header(self):
+        return re.split(r'\t', self.headers.rstrip())
     
 class CustOrderQueryRow(models.Model):
     """
@@ -308,18 +350,18 @@ class CustOrderQueryRow(models.Model):
     There may be ,multiple records for a given query
     Each record consists of a TextField with delimeter separated values
     Query may be a filename, URL, or web service call
+    QueryRecordNumber provides the line number within the query file for a given record for error reporting
     QueryId is the unique timestamp that ties together the query rows for a given query
     Sep gives a clue to how to parse the record
-    A header record will provide the field names for the other record lines for a given query
     parseError holds any errors generated when parsing information out of the row 
     """
     ups_pkt = models.ForeignKey(PickTicket)
+    coHeader=models.ForeignKey(CustOrderHeader)
     query=models.CharField(max_length=1024, default='')
     queryId=models.FloatField(default=0)
     queryRecordNumber=models.IntegerField(default=0)
     record=models.TextField(default='')
     parseError=models.TextField(default='')
-    headers=models.TextField(default='') # holds headers in order read from file
     sep=models.CharField(max_length=1,default='\t')
     type=models.CharField(max_length=20, default='')
     purchaseDate=models.DateTimeField(blank=True,default=timezone.now())
@@ -341,40 +383,44 @@ class CustOrderQueryRow(models.Model):
     productName=models.CharField(max_length=500,default='')
     quantity=models.IntegerField(default=0)
         
+    def get_headers(self):
+        return self.coHeader.read_header()
+        
     def read_zen_line(self,):
+        headers=self.get_headers()
         self.type='Zen'
         res=re.split(self.sep, self.record.rstrip())
-        if len(res) != len(self.headers):
+        if len(res) != len(headers):
             # improperly formatted line
-            if len(res) > len(self.headers):
+            if len(res) > len(headers):
                 # the line is too long
                 return(-1)
             # assume that there are empty cells at the end of the line, just add empty strings
-            for indx in range(len(self.headers)-len(res)):
+            for indx in range(len(headers)-len(res)):
                 res.append('')
-        for item in self.headers:
+        for item in headers:
             if item == 'v_date_purchased':
-                self.purchaseDate=res[self.headers.index(item)]
+                self.purchaseDate=res[headers.index(item)]
             if item == 'v_orders_id':
-                self.orderId=res[self.headers.index(item)]
+                self.orderId=res[headers.index(item)]
             if item == 'v_customers_name':
-                self.shipToName=res[self.headers.index(item)]
+                self.shipToName=res[headers.index(item)]
             if item == 'v_customers_street_address':
-                self.shipToAddress1=res[self.headers.index(item)]
+                self.shipToAddress1=res[headers.index(item)]
             if item == 'v_customers_suburb':
-                self.shipToAddress2=res[self.headers.index(item)]
+                self.shipToAddress2=res[headers.index(item)]
             if item == 'v_customers_city':
-                self.shipToCity=res[self.headers.index(item)]
+                self.shipToCity=res[headers.index(item)]
             if item == 'v_customers_postcode':
-                self.shipToZip=res[self.headers.index(item)]
+                self.shipToZip=res[headers.index(item)]
             if item == 'v_customers_country':
-                self.shipToCntry=res[self.headers.index(item)]
+                self.shipToCntry=res[headers.index(item)]
             if item == 'v_customers_email_address':
-                self.buyerEmail=res[self.headers.index(item)]
+                self.buyerEmail=res[headers.index(item)]
             if item == 'v_products_model':
-                self.sku=res[self.headers.index(item)]
+                self.sku=res[headers.index(item)]
             if item == 'v_products_name':
-                self.productName=res[self.headers.index(item)]
+                self.productName=res[headers.index(item)]
         #self.parse_zen_date()
         return(0)
         
@@ -390,105 +436,107 @@ class CustOrderQueryRow(models.Model):
             self.purchaseDate='00/00/00 00:00:00'
     
     def read_ss_line(self):
+        headers=self.get_headers()
         self.type='SS'
         res=re.split(self.sep, self.record.rstrip())
-        if len(res) != len(self.headers):
+        if len(res) != len(headers):
             # improperly formatted line
-            if len(res) > len(self.headers):
+            if len(res) > len(headers):
                 # the line is too long
                 return(-1)
             # assume that there are empty cells at the end of the line, just add empty strings
-            for indx in range(len(self.headers)-len(res)):
+            for indx in range(len(headers)-len(res)):
                 res.append('')
-        for item in self.headers:
+        for item in headers:
             if item == 'sku':
-                self.sku=res[self.headers.index(item)]
+                self.sku=res[headers.index(item)]
             if item == 'product-name':
-                self.productName=res[self.headers.index(item)]
+                self.productName=res[headers.index(item)]
             if item == 'order-id':
-                self.orderId=res[self.headers.index(item)]
+                self.orderId=res[headers.index(item)]
             if item == 'order-type':
-                self.orderType=res[self.headers.index(item)]
+                self.orderType=res[headers.index(item)]
             if item == 'quantity-purchased':
-                self.quantity=res[self.headers.index(item)]
+                self.quantity=res[headers.index(item)]
             if item == 'purchase-date':
-                self.purchaseDate=res[self.headers.index(item)]
+                self.purchaseDate=res[headers.index(item)]
             if item == 'ship-service-level':
-                self.serviceLevel=res[self.headers.index(item)]
+                self.serviceLevel=res[headers.index(item)]
             if item == 'recipient-name':
-                self.shipToName=res[self.headers.index(item)]
+                self.shipToName=res[headers.index(item)]
             if item == 'buyer-email':
-                self.buyerEmail=res[self.headers.index(item)]
+                self.buyerEmail=res[headers.index(item)]
             if item == 'ship-address-1':
-                self.shipToAddress1=res[self.headers.index(item)]
+                self.shipToAddress1=res[headers.index(item)]
             if item == 'ship-address-2':
-                self.shipToAddress2=res[self.headers.index(item)]
+                self.shipToAddress2=res[headers.index(item)]
             if item == 'ship-address-3':
-                self.shipToddress3=res[self.headers.index(item)]
+                self.shipToddress3=res[headers.index(item)]
             if item == 'ship-city':
-                self.shipToCity=res[self.headers.index(item)]
+                self.shipToCity=res[headers.index(item)]
             if item == 'ship-state':
-                self.shipToState=res[self.headers.index(item)]
+                self.shipToState=res[headers.index(item)]
             if item == 'ship-postal-code':
-                self.shipToZip=res[self.headers.index(item)]
+                self.shipToZip=res[headers.index(item)]
             if item == 'ship-country':
-                self.shipToCntry=res[self.headers.index(item)]
+                self.shipToCntry=res[headers.index(item)]
             if item == 'carrier':
-                self.carrier=res[self.headers.index(item)]
+                self.carrier=res[headers.index(item)]
             if item == 'pack-slip-type':
-                self.packSlipType=res[self.headers.index(item)]
+                self.packSlipType=res[headers.index(item)]
         return(0)
     
     def read_amazon_line(self):
+        headers=self.get_headers()
         self.type='Amazon'
         res=re.split(self.sep, self.record.rstrip())
         if self.record[-2:-1]==self.sep:
             res.append('')
-        if len(res) != len(self.headers):
+        if len(res) != len(headers):
             # improperly formatted line
-            if len(res) > len(self.headers):
+            if len(res) > len(headers):
                 # the line is too long
                 return(-1)
             # assume that there are empty cells at the end of the line, just add empty strings
-            for indx in range(len(self.headers)-len(res)):
+            for indx in range(len(headers)-len(res)):
                 res.append('')
-        for item in self.headers:
+        for item in headers:
             if item == 'buyer-name':
-                self.shipToName=res[self.headers.index(item)]
+                self.shipToName=res[headers.index(item)]
             if item == 'buyer-email':
-                self.buyerEmail=res[self.headers.index(item)]
+                self.buyerEmail=res[headers.index(item)]
             if item == 'sku':
-                self.sku=res[self.headers.index(item)]
+                self.sku=res[headers.index(item)]
             if item == 'product-name':
-                self.productName=res[self.headers.index(item)]
+                self.productName=res[headers.index(item)]
             if item == 'purchase-date':
-                self.purchaseDate=res[self.headers.index(item)]
+                self.purchaseDate=res[headers.index(item)]
             if item == 'order-id':
-                self.orderId=res[self.headers.index(item)]
+                self.orderId=res[headers.index(item)]
             if item == 'quantity-purchased':
-                self.quantity=res[self.headers.index(item)]
+                self.quantity=res[headers.index(item)]
             if item == 'ship-service-level':
-                self.serviceLevel=res[self.headers.index(item)]
+                self.serviceLevel=res[headers.index(item)]
             if item == 'recipient-name':
-                self.shipToName=res[self.headers.index(item)]
+                self.shipToName=res[headers.index(item)]
             if item == 'ship-address-1':
-                self.shipToAddress1=res[self.headers.index(item)]
+                self.shipToAddress1=res[headers.index(item)]
             if item == 'ship-address-2':
-                self.shipToAddress2=res[self.headers.index(item)]
+                self.shipToAddress2=res[headers.index(item)]
             if item == 'ship-address-3':
-                self.shipToAddress3=res[self.headers.index(item)]
+                self.shipToAddress3=res[headers.index(item)]
             if item == 'ship-city':
-                self.shipToCity=res[self.headers.index(item)]
+                self.shipToCity=res[headers.index(item)]
             if item == 'ship-state':
-                self.shipToState=res[self.headers.index(item)]
+                self.shipToState=res[headers.index(item)]
             if item == 'ship-postal-code':
-                self.shipToZip=res[self.headers.index(item)]
+                self.shipToZip=res[headers.index(item)]
             if item == 'ship-country':
-                self.shipToCntry=res[self.headers.index(item)]
+                self.shipToCntry=res[headers.index(item)]
             if item == 'carrier':
-                self.carrier=res[self.headers.index(item)]
+                self.carrier=res[headers.index(item)]
             if item == 'pack-slip-type':
-                self.packSlipType=res[self.headers.index(item)]
+                self.packSlipType=res[headers.index(item)]
         
         #self.parse_amazon_date()
         return(0)
@@ -512,6 +560,7 @@ class PH(models.Model):
     SEP=models.CharField(max_length=1,default='|') # record separator
     itemIndex = models.IntegerField(default=0)
     ups_pkt=models.ForeignKey(PickTicket)
+    coHeader=models.ForeignKey(CustOrderHeader)
     REC_TYPE=models.CharField(max_length=2,default='PH')                   # 2 char
     WHSE=models.CharField(max_length=3,default='')                         # 3 char
     CO=models.CharField(max_length=10,default='')                          # 10 char
@@ -639,6 +688,7 @@ class PH(models.Model):
         pdItem.PKT_SEQ_NBR='{:09}'.format(index)
         pdItem.STAT_CODE='00'
         pdItem.ups_ph=self
+        pdItem.coQueryRow=coLine
         lineError=pdItem.check_line()
         if lineError != '':
             # some missing information in this line item, generate an error
@@ -653,9 +703,9 @@ class PH(models.Model):
             self.SHIPTO_CNTRY == '' or self.SHIPTO_ZIP == '' or self.PH1_FREIGHT_TERMS == '' or 
             self.ORD_TYPE == '' or self.SHIP_VIA == '' or self.PKT_CTRL_NBR == '' or 
             self.PHI_SPL_INSTR_NBR == '' or self.PHI_SPL_INSTR_TYPE == '' or self.PHI_SPL_INSTR_CODE == ''):
-            errorLine='PARSE ERROR (PH): missing data:\n\t'
+            errorLine='PARSE ERROR (PH): missing data:&'
             if self.PH1_CUST_PO_NBR == '':
-                errorLine+='"Customer PO # (ordere #)" missing, '
+                errorLine+='"Customer PO # (order #)" missing, '
             if self.SHIPTO_NAME == '':
                 errorLine+='"Ship to Name" missing, '
             if self.SHIPTO_ADDR_1 == '':
@@ -682,6 +732,7 @@ class PH(models.Model):
                 errorLine+='"Special Instruction Type" missing, '
             if self.PHI_SPL_INSTR_CODE == '':
                 errorLine+='"Special Instruction Code" missing, '
+            errorLine+='&'
         return(errorLine)
     
     def ph_item(self):
@@ -736,6 +787,7 @@ class PD(models.Model):
     '''
     SEP=models.CharField(max_length=1,default='|') # record separator
     ups_ph=models.ForeignKey(PH)
+    coQueryRow=models.ForeignKey(CustOrderQueryRow)
     
     # PD section
     # key for PD hash tables is PKT_SEQ_NBR
@@ -783,13 +835,14 @@ class PD(models.Model):
     def check_line(self):
         errorLine=''
         if self.CUST_SKU == '' or self.ORIG_ORD_QTY == '' or self.PKT_SEQ_NBR == '':
-            errorLine='PARSE ERROR (PD): missing data:\n\t'
+            errorLine='PARSE ERROR (PD): missing data:&'
             if self.CUST_SKU == '':
                 errorLine+='"SKU" missing, '
             if self.ORIG_ORD_QTY == '':
                 errorLine+='"Quantity" missing, '
             if self.PKT_SEQ_NBR == '':
                 errorLine+='"Pickticket Sequence Number" missing, '
+            errorLine+='&'
         return(errorLine)
     
 

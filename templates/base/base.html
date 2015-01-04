@@ -3,17 +3,20 @@
 <html lang="en">
 <head>    
     <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+    <link rel="stylesheet" href="{% static 'ups/style/style.css' %}">
     {% block extra_scripts %} {% endblock extra_scripts %}
-    {# <link rel="stylesheet" href="{% url ups/style.css %}" /> #}
     <title>{% block title %}MiraiDebug{% endblock %}</title>
 </head>
 
 <body>
+    <div id="branding">
+        {% block branding %}<h1>MiraiDebug</h1>{% endblock branding %}
+    </div>
     <div id="sidebar">
         {% block sidebar %}
-        <ul>
+        <ul class="sidebar">
             <li><a href="/">Home</a></li>
-            <li><a href="/ups/">UPS</a></li>
+            <li><a href="/ups/pick_ticket_index">PickTickets</a></li>
             <li><a href="/ups/file_selection">UPS File Selection</a></li>
         </ul>
         {% endblock %}

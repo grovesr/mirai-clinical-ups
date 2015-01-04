@@ -1,0 +1,14 @@
+{% extends "base/base.html" %}
+{% load staticfiles %}
+{% block content %}
+    {% if error_message %}
+        <strong><p>{{ error_message }}</p></strong>
+   {% endif %}
+   {% if pkt_list %}
+    <ul>
+        {% for pkt in pkt_list %}
+            <li><a href="{% url 'ups:pick_ticket_detail' pkt.id %}">{{ pkt.fileName }}</a></li>
+        {% endfor %}
+    </ul>
+   {% endif %}
+{% endblock content %}

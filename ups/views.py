@@ -1,23 +1,50 @@
-from django.shortcuts import render, get_object_or_404, render_to_response
+from django.shortcuts import render
 from django.http import HttpResponseRedirect
 from django.core.urlresolvers import reverse
-from django.views import generic
-from ups.models import mirai_check_args, mirai_get_files, mirai_initialize_ups_pkt, CustOrderQueryRow, PD, PH, PickTicket, ShipmentOrderRow, ShipmentOrderReport
-from ups.forms import FileNameForm
-import time
 import datetime
-import random
-import os
+from django.utils import timezone
+from django.core.exceptions import ObjectDoesNotExist
+from ups.models import mirai_check_args, mirai_initialize_ups_pkt, PickTicket
+from ups.forms import FileNameForm
 
 # Create your views here.
 def index(request):
     return render(request,'ups/index.html')
 
-def file_creation(request, pk):
-    ups_pkt=get_object_or_404(PickTicket,pk=pk)
-    
-    return render(request,'ups/file_creation.html', {'ups_pkt':ups_pkt})
+def pick_ticket_detail(request, pk):
+    try:
+        ups_pkt=PickTicket.objects.get(pk=pk)
+    except ObjectDoesNotExist:
+        return render(request,'ups/pick_ticket_detail.html', {'error_message':'PickTicket '+str(pk)+' doesn''t exist'})
+    return render(request,'ups/pick_ticket_detail.html', {'ups_pkt':ups_pkt})
 
+def pick_ticket_report(request, pk):
+    try:
+        ups_pkt=PickTicket.objects.get(pk=pk)
+    except ObjectDoesNotExist:
+        return render(request,'ups/pick_ticket_report.html', {'error_message':'PickTicket '+str(pk)+' doesn''t exist'})
+    return render(request,'ups/pick_ticket_report.html', {'ups_pkt':ups_pkt})
+
+def pick_ticket_error_report(request, pk):
+    try:
+        ups_pkt=PickTicket.objects.get(pk=pk)
+    except ObjectDoesNotExist:
+        return render(request,'ups/pick_ticket_error_report.html', {'error_message':'PickTicket '+str(pk)+' doesn''t exist'})
+    return render(request,'ups/pick_ticket_error_report.html', {'ups_pkt':ups_pkt})
+
+def pick_ticket_pkt_report(request, pk):
+    try:
+        ups_pkt=PickTicket.objects.get(pk=pk)
+    except ObjectDoesNotExist:
+        return render(request,'ups/pick_ticket_pkt_report.html', {'error_message':'PickTicket '+str(pk)+' doesn''t exist'})
+    return render(request,'ups/pick_ticket_pkt_report.html', {'ups_pkt':ups_pkt})
+
+def pick_ticket_index(request):
+    today=timezone.now()
+    pkt_list=PickTicket.objects.filter(DOC_DATE__gte = (today - datetime.timedelta(days=7)))
+    if len(pkt_list)==0:
+        return render(request,'ups/pick_ticket_index.html', {'error_message':'No PickTickets to display'})
+    return render(request,'ups/pick_ticket_index.html', {'pkt_list':pkt_list})
 
 def file_selection(request):
     # if this is a POST request we need to process the form data
@@ -47,7 +74,7 @@ def file_selection(request):
                 })
             #
             # redirect to a new URL:)
-            return HttpResponseRedirect(reverse('ups:file_creation',args=[ups_pkt_id,]))
+            return HttpResponseRedirect(reverse('ups:pick_ticket_detail',args=[ups_pkt_id,]))
     # if a GET (or any other method) we'll create a blank form
     else:
         form=FileNameForm()

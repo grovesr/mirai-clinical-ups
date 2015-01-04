@@ -1,0 +1,12 @@
+{% extends "base/base.html" %}
+{% load staticfiles %}
+{% block content %}
+    {% if error_message %}
+        <strong><p>{{ error_message }}</p></strong>
+    {% endif %}
+    {% if ups_pkt %}
+        <div id="pktReport">
+            {{ ups_pkt.parse_html_pkt_report|safe }}
+        </div>
+    {% endif %}
+{% endblock content %}
