@@ -11,4 +11,5 @@ urlpatterns = patterns('',
     url(r'^(?P<pk>\d+)/pick_ticket_error_report/$', views.pick_ticket_error_report, name='pick_ticket_error_report'),
     url(r'^(?P<pk>\d+)/pick_ticket_pkt_report/$', views.pick_ticket_pkt_report, name='pick_ticket_pkt_report'),
     url(r'^pick_ticket_index/$', views.pick_ticket_index, name='pick_ticket_index'),
+    url(r'^blank/$', views.blank, name='blank'),
     )

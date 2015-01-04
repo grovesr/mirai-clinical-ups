@@ -10,5 +10,7 @@
             fileName = {{ ups_pkt.fileName }}<br/>
             DOC_DATE = {{ ups_pkt.DOC_DATE }}</p>
         </div>
+        <iframe width="100%" height="300px" src="{% url 'ups:pick_ticket_error_report' ups_pkt.id %}" name="iframe_report">
+        </iframe>
     {% endif %}
 {% endblock content %}

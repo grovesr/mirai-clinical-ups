@@ -11,6 +11,9 @@ from ups.forms import FileNameForm
 def index(request):
     return render(request,'ups/index.html')
 
+def blank(request):
+    return render(request,'base/blank.html')
+
 def pick_ticket_detail(request, pk):
     try:
         ups_pkt=PickTicket.objects.get(pk=pk)

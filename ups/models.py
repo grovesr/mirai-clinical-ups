@@ -230,6 +230,7 @@ class PickTicket(models.Model):
         reMatchParseError=re.compile('.*PARSE ERROR.*')
         reMatchFileError=re.compile('.*FILE ERROR.*')
         reMatchURLError=re.compile('.*URL ERROR.*')
+        totalErrors=0
         reportHtml=''
         # get the ids of the file(s) used to create this pickticket 
         orderIds=CustOrderQueryRow.objects.filter(ups_pkt=self.id).values('queryId').distinct()
@@ -242,10 +243,10 @@ class PickTicket(models.Model):
                 reportHtml+='<li>Parse errors for file '+errorRows[0].query
                 reportHtml+='<ul class="parseErrors">'
                 for errorRow in errorRows:
+                    totalErrors+=1
                     parseList=errorRow.parseError.split('&')
                     if parseList[-1] == '':
                         parseList=parseList[:-1]
-                    print parseList[:-1]
                     # assume the errors come in title/value pairs
                     for parseError in parseList:
                         if reMatchParseError.match(parseError) or reMatchFileError.match(parseError) or reMatchURLError.match(parseError):
@@ -256,6 +257,8 @@ class PickTicket(models.Model):
                 reportHtml+='</ul>'
                 reportHtml+='</li>'
         reportHtml+='</ul></p>'
+        if totalErrors==0:
+            reportHtml='<strong><p>No errors to report</p></strong>'
         return reportHtml
     
     def parse_html_pkt_report(self):
