@@ -1,5 +1,20 @@
-p#pktId {
-    color:blue;
+.pkt-warning, .pkt-report-header {
+    font-weight: bold;
+}
+
+.pkt-error-text {
+    color: red;
+}
+
+.pkt-param-text, .pkt-error-text {
+    font-weight: bold;
+}
+
+.pkt-info p {
+    color:black;
+}
+li a {
+    color:green;
 }
 
 a:visited{
@@ -10,8 +25,64 @@ a:active,a:focus,a:hover{
 	color:#1d915c
 }
 
-ul.phItems, ul.parseErrors, ul.sidebar {
+ul.parse-errors, ul.sidebar, ul.ph-items {
     list-style-type:none;
-    list-style-position: inside;
+}
+
+ul.tabbed-menu {
+    padding: 0;
+    width: 1000px;
+}
+
+ul.tabbed-menu li, ul.sidebar li {
+    display: inline;
+}
+
+ul.tabbed-menu a {
+    float: left;
+    margin-right: 1%;
+    background-color: lightgrey;
+    color: black;
+    padding: 10px 20px 0px;
+    text-decoration: none;
+    border-radius: 15px 15px 0 0;
+    border: solid lightgrey;
+    border-bottom-style: none;
+}
+
+ul.tabbed-menu a:hover {
+    background-color:darkgrey;
+    border: solid darkgrey;
+    border-bottom-style: none;
+}
+
+ul.tabbed-menu a:focus {
+    border: solid grey;
+    border-bottom-style: none;
+}
+
+#site-name {
+    text-align: center;
+    width: 1000px;
+    font-size: 250%;
+}
+
+.sidebar li {
+    margin-right: 3.5%;
+}
+
+.sidebar a {
+    text-decoration: none;
+}
+
+.sidebar {
+    font-size: 150%;
+    border-bottom: 5px solid black;
+    width: 1000px;
+}
+
+.iframe-report {
+     width: 1000px;
+     height: 300px;
 }
 

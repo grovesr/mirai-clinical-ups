@@ -1,11 +1,19 @@
 {% extends "base/blank.html" %}
 {% load staticfiles %}
 {% block content %}
+    <div class="pkt-info">
+        <p>
+        <span class="pkt-report-header">PickTicket Pkt Report for:</span><br/>
+        id = {{ ups_pkt.id }}<br/>
+        fileName = {{ ups_pkt.fileName }}<br/>
+        DOC_DATE = {{ ups_pkt.DOC_DATE }}
+        </p>
+    </div>
     {% if error_message %}
-        <strong><p>{{ error_message }}</p></strong>
+       <p class="pkt-warning">{{ error_message }}</p>
     {% endif %}
     {% if ups_pkt %}
-        <div id="pktReport">
+        <div id="pkt-report">
             {{ ups_pkt.parse_html_pkt_report|safe }}
         </div>
     {% endif %}

@@ -61,7 +61,8 @@ def mirai_get_files(inputType,args):
         for poUrl in args:
             try:
                 urlStr = urllib2.urlopen(poUrl)
-                files[urlStr.url]=urlStr.read()
+                # just use the filename, not the dropbox URL, which is temporary anyway
+                files[urlStr.url.split(os.sep)[-1]]=urlStr.read()
             except:
                 files[poUrl]=['URL ERROR: unable to open URL "' + poUrl + '"&']
     return files
@@ -234,14 +235,14 @@ class PickTicket(models.Model):
         reportHtml=''
         # get the ids of the file(s) used to create this pickticket 
         orderIds=CustOrderQueryRow.objects.filter(ups_pkt=self.id).values('queryId').distinct()
-        reportHtml+='<p><ul class="parseErrors">'
+        reportHtml+='<p><ul class="parse-errors">'
         for orderId in orderIds:
         # for each file check to see if any errors were generated
             errorRows=CustOrderQueryRow.objects.filter(queryId=orderId['queryId']).filter(parseError__contains='ERROR')
             if len(errorRows)>0:
                 # found some errors with this file
-                reportHtml+='<li>Parse errors for file '+errorRows[0].query
-                reportHtml+='<ul class="parseErrors">'
+                reportHtml+='<li><span class="pkt-error-text">Parse errors for File: "'+errorRows[0].query+'"</span>'
+                reportHtml+='<ul class="parse-errors">'
                 for errorRow in errorRows:
                     totalErrors+=1
                     parseList=errorRow.parseError.split('&')
@@ -250,15 +251,15 @@ class PickTicket(models.Model):
                     # assume the errors come in title/value pairs
                     for parseError in parseList:
                         if reMatchParseError.match(parseError) or reMatchFileError.match(parseError) or reMatchURLError.match(parseError):
-                            reportHtml+='<li>'+parseError+'<ul class="parseErrors">'
+                            reportHtml+='<li>'+parseError+'<ul class="parse-errors">'
                         else:
-                            reportHtml+='<li>'+parseError+' file line #: '+str(errorRow.queryRecordNumber)+'</li>'
+                            reportHtml+='<li class="pkt-text">'+parseError+' file line #: '+str(errorRow.queryRecordNumber)+'</li>'
                             reportHtml+='</ul></li>'
                 reportHtml+='</ul>'
                 reportHtml+='</li>'
         reportHtml+='</ul></p>'
         if totalErrors==0:
-            reportHtml='<strong><p>No errors to report</p></strong>'
+            reportHtml='<p class="pkt-warning">No errors to report</p>'
         return reportHtml
     
     def parse_html_pkt_report(self):
@@ -266,37 +267,48 @@ class PickTicket(models.Model):
         reportHtml+='<p>PH Items:' # open phItems paragraph
         # we have recorded the errors, now let's output the report for each order
         for phItem in PH.objects.filter(ups_pkt=self.id):
-            reportHtml+='<ul class="phItems">' # open customer main list
+            reportHtml+='<ul class="ph-items">' # open customer main list
             reportHtml+='<li>Customer: '+phItem.SHIPTO_NAME+'' # open main customer list item
-            reportHtml+='<ul class="phItems">' # open first list within customer
-            reportHtml+='<li>File: '+phItem.coHeader.query+'</li>'
+            reportHtml+='<ul class="ph-items">' # open first list within customer
+            if phItem.error:
+                reportHtml+='<li class="pkt-error-text" >File: "'+phItem.coHeader.query+'"</li>'
+            else:
+                reportHtml+='<li class="pkt-text">File "'+phItem.coHeader.query+'"</li>'
             reportHtml+='<li>Order Date: '+phItem.PH1_ORD_DATE.strftime('%m/%d/%y %H:%M:%S')+'</li>'
             reportHtml+='<li>Order #: '+phItem.PH1_CUST_PO_NBR+'</li>'
             reportHtml+='<li>Address:' # open customer address list item, end span phSub1
-            reportHtml+='<ul class="phItems">' # open list within customer address
-            reportHtml+='<li>'+phItem.SHIPTO_ADDR_1+'</li>'
-            if phItem.SHIPTO_ADDR_2 != "":
-                reportHtml+='<li>'+phItem.SHIPTO_ADDR_2+'</li>'
-            if phItem.SHIPTO_ADDR_3 != "":
-                reportHtml+='<li>'+phItem.SHIPTO_ADDR_3+'</li>'
-            reportHtml+='<li>'+phItem.SHIPTO_CITY+', '+phItem.SHIPTO_STATE+', '+phItem.SHIPTO_ZIP+', '+phItem.SHIPTO_CNTRY+'</li></span>'
+            reportHtml+='<ul class="ph-items">' # open list within customer address
+            reportHtml+='<li><span class="pkt-param-text">SHIPTO_ADDR_1:</span> '+phItem.SHIPTO_ADDR_1+'</li>'
+            reportHtml+='<li><span class="pkt-param-text">SHIPTO_ADDR_2:</span> '+phItem.SHIPTO_ADDR_2+'</li>'
+            reportHtml+='<li><span class="pkt-param-text">SHIPTO_ADDR_3:</span> '+phItem.SHIPTO_ADDR_3+'</li>'
+            reportHtml+='<li><span class="pkt-param-text">SHIPTO_CITY:</span> '+phItem.SHIPTO_CITY+'</li>'
+            reportHtml+='<li><span class="pkt-param-text">SHIPTO_STATE:</span> '+phItem.SHIPTO_STATE+'</li>'
+            reportHtml+='<li><span class="pkt-param-text">SHIPTO_ZIP:</span> '+phItem.SHIPTO_ZIP+'</li>'
+            reportHtml+='<li><span class="pkt-param-text">SHIPTO_CNTRY:</span> '+phItem.SHIPTO_CNTRY+'</li>'
             reportHtml+='</ul>' # end list within customer address
             reportHtml+='</li>' # end customer address list item
-            reportHtml+='<li>PH1_CUST_PO_NBR: '+phItem.PH1_CUST_PO_NBR+'</li>'
-            reportHtml+='<li>SHIP_VIA: '+phItem.SHIP_VIA+'</li>'
-            reportHtml+='<li>ORD_TYPE: '+phItem.ORD_TYPE+'</li>'
-            reportHtml+='<li>PKT_CNTRL_NBR: '+phItem.PKT_CTRL_NBR+'</li>'
-            reportHtml+='<li>PH1_PROD_VALUE: '+phItem.PH1_PROD_VALUE+'</li>'
-            reportHtml+='<li>PH1_FREIGHT_TERMS: '+phItem.PH1_FREIGHT_TERMS+'</li>'
+            reportHtml+='<li><span class="pkt-param-text">PH1_CUST_PO_NBR:</span> '+phItem.PH1_CUST_PO_NBR+'</li>'
+            reportHtml+='<li><span class="pkt-param-text">SHIP_VIA:</span> '+phItem.SHIP_VIA+'</li>'
+            reportHtml+='<li><span class="pkt-param-text">ORD_TYPE:</span> '+phItem.ORD_TYPE+'</li>'
+            reportHtml+='<li><span class="pkt-param-text">PKT_CNTRL_NBR:</span> '+phItem.PKT_CTRL_NBR+'</li>'
+            reportHtml+='<li><span class="pkt-param-text">PH1_PROD_VALUE:</span> '+phItem.PH1_PROD_VALUE+'</li>'
+            reportHtml+='<li><span class="pkt-param-text">PH1_FREIGHT_TERMS:</span> '+phItem.PH1_FREIGHT_TERMS+'</li>'
             for code in phItem.PHI_SPL_INSTR_CODE.split(r','):
-                reportHtml+='<li>PHI_SPL_INSTR_CODE: '+code+'</li>'
+                reportHtml+='<li><span class="pkt-param-text">PHI_SPL_INSTR_CODE:</span> '+code+'</li>'
             reportHtml+='<li>Items:' # open customer items list
-            reportHtml+='<ul class="phItems">' # open list within customer items
+            reportHtml+='<ul class="ph-items">' # open list within customer items
             for pdItem in PD.objects.filter(ups_ph=phItem.id):
-                reportHtml+='<li>PKT_SEQ_NBR: '+pdItem.PKT_SEQ_NBR+'</li>'
-                reportHtml+='<li>ORIG_ORD_QTY: '+pdItem.ORIG_ORD_QTY+'</li>'
-                reportHtml+='<li>PKT_ORD_QTY: '+pdItem.ORIG_PKT_QTY+'</li>'
-                reportHtml+='<li>CUST_SKU: '+pdItem.CUST_SKU+'</li>'
+                if pdItem.error:
+                    reportHtml+='<li><span class="pkt-error-text"> file line #: '+str(pdItem.coQueryRow.queryRecordNumber)+'</span>'
+                else:
+                    reportHtml+='<li><span class="pkt-text"> file line #: '+str(pdItem.coQueryRow.queryRecordNumber)+'</span>'
+                reportHtml+='<ul class="ph-items">' # start list of PD info parsed from this file line
+                reportHtml+='<li><span class="pkt-param-text">PKT_SEQ_NBR:</span> '+pdItem.PKT_SEQ_NBR+'</li>'
+                reportHtml+='<li><span class="pkt-param-text">ORIG_ORD_QTY:</span> '+pdItem.ORIG_ORD_QTY+'</li>'
+                reportHtml+='<li><span class="pkt-param-text">PKT_ORD_QTY:</span> '+pdItem.ORIG_PKT_QTY+'</li>'
+                reportHtml+='<li><span class="pkt-param-text">CUST_SKU:</span> '+pdItem.CUST_SKU+'</li>'
+                reportHtml+='</ul>' # end list of PD info
+            reportHtml+='</li>' # end list item for this file line #
             reportHtml+='</ul>' # end list within customer items
             reportHtml+='</ul>' # close main list within customer
             reportHtml+='</li>' # close main customer list item
@@ -309,14 +321,17 @@ class PickTicket(models.Model):
         reportHtml+='<p>PH Items:' # open phItems paragraph
         # we have recorded the errors, now let's output the report for each order
         for phItem in PH.objects.filter(ups_pkt=self.id):
-            reportHtml+='<ul class="phItems">' # open customer main list
+            reportHtml+='<ul class="ph-items">' # open customer main list
             reportHtml+='<li>Customer: '+phItem.SHIPTO_NAME+'' # open main customer list item
-            reportHtml+='<ul class="phItems">' # open first list within customer
-            reportHtml+='<li>File: '+phItem.coHeader.query+'</li>'
+            reportHtml+='<ul class="ph-items">' # open first list within customer
+            if phItem.error:
+                reportHtml+='<li class="pkt-error-text">File: "'+phItem.coHeader.query+'"</li>'
+            else:
+                reportHtml+='<li class="pkt-text">File: "'+phItem.coHeader.query+'"</li>'
             reportHtml+='<li>Order Date: '+phItem.PH1_ORD_DATE.strftime('%m/%d/%y %H:%M:%S')+'</li>'
             reportHtml+='<li>Order #: '+phItem.PH1_CUST_PO_NBR+'</li>'
             reportHtml+='<li>Address:' # open customer address list item, end span phSub1
-            reportHtml+='<ul class="phItems">' # open list within customer address
+            reportHtml+='<ul class="ph-items">' # open list within customer address
             reportHtml+='<li>'+phItem.SHIPTO_ADDR_1+'</li>'
             if phItem.SHIPTO_ADDR_2 != "":
                 reportHtml+='<li>'+phItem.SHIPTO_ADDR_2+'</li>'
@@ -326,7 +341,7 @@ class PickTicket(models.Model):
             reportHtml+='</ul>' # end list within customer address
             reportHtml+='</li>' # end customer address list item
             reportHtml+='<li>Items:' # open customer items list
-            reportHtml+='<ul class="phItems">' # open list within customer items
+            reportHtml+='<ul class="ph-items">' # open list within customer items
             for pdItem in PD.objects.filter(ups_ph=phItem.id):
                 reportHtml+='<li>('+pdItem.ORIG_ORD_QTY+') '+pdItem.SIZE_DESC+' (SKU:'+pdItem.CUST_SKU+', file line #: '+str(pdItem.coQueryRow.queryRecordNumber)+')</li>'
             reportHtml+='</ul>' # end list within customer items
@@ -564,6 +579,7 @@ class PH(models.Model):
     itemIndex = models.IntegerField(default=0)
     ups_pkt=models.ForeignKey(PickTicket)
     coHeader=models.ForeignKey(CustOrderHeader)
+    error=models.BooleanField(default=False)
     REC_TYPE=models.CharField(max_length=2,default='PH')                   # 2 char
     WHSE=models.CharField(max_length=3,default='')                         # 3 char
     CO=models.CharField(max_length=10,default='')                          # 10 char
@@ -706,6 +722,7 @@ class PH(models.Model):
             self.SHIPTO_CNTRY == '' or self.SHIPTO_ZIP == '' or self.PH1_FREIGHT_TERMS == '' or 
             self.ORD_TYPE == '' or self.SHIP_VIA == '' or self.PKT_CTRL_NBR == '' or 
             self.PHI_SPL_INSTR_NBR == '' or self.PHI_SPL_INSTR_TYPE == '' or self.PHI_SPL_INSTR_CODE == ''):
+            self.error=True
             errorLine='PARSE ERROR (PH): missing data:&'
             if self.PH1_CUST_PO_NBR == '':
                 errorLine+='"Customer PO # (order #)" missing, '
@@ -791,6 +808,7 @@ class PD(models.Model):
     SEP=models.CharField(max_length=1,default='|') # record separator
     ups_ph=models.ForeignKey(PH)
     coQueryRow=models.ForeignKey(CustOrderQueryRow)
+    error=models.BooleanField(default=False)
     
     # PD section
     # key for PD hash tables is PKT_SEQ_NBR
@@ -838,6 +856,7 @@ class PD(models.Model):
     def check_line(self):
         errorLine=''
         if self.CUST_SKU == '' or self.ORIG_ORD_QTY == '' or self.PKT_SEQ_NBR == '':
+            self.error=True
             errorLine='PARSE ERROR (PD): missing data:&'
             if self.CUST_SKU == '':
                 errorLine+='"SKU" missing, '

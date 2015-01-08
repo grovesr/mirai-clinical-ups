@@ -2,15 +2,15 @@
 {% load staticfiles %}
 {% block content %}
     {% if error_message %}
-        <strong><p>{{ error_message }}</p></strong>
+        <p class="pkt-warning">{{ error_message }}</p>
     {% endif %}
     {% if ups_pkt %}
-        <div id="pktInfo">
-            <p id="pktId">index = {{ ups_pkt.id }}<br/>
-            fileName = {{ ups_pkt.fileName }}<br/>
-            DOC_DATE = {{ ups_pkt.DOC_DATE }}</p>
-        </div>
-        <iframe width="100%" height="300px" src="{% url 'ups:pick_ticket_error_report' ups_pkt.id %}" name="iframe_report">
+        <ul class="tabbed-menu" id="tabbed-menu1">
+            <li><a id="tab1" href="{% url 'ups:pick_ticket_error_report' ups_pkt.id %}" target="iframe_report">Errors</a></li>
+            <li><a id="tab2" href="{% url 'ups:pick_ticket_report' ups_pkt.id %}" target="iframe_report">Report</a></li>
+            <li><a id="tab3" href="{% url 'ups:pick_ticket_pkt_report' ups_pkt.id %}" target="iframe_report">Pkt Report</a></li>
+        </ul>
+        <iframe class="iframe-report" src="{% url 'ups:pick_ticket_error_report' ups_pkt.id %}" name="iframe_report">
         </iframe>
     {% endif %}
 {% endblock content %}
