@@ -1,11 +1,12 @@
-from django.shortcuts import render
+from django.shortcuts import render, render_to_response
 from django.http import HttpResponseRedirect
 from django.core.urlresolvers import reverse
 import datetime
 from django.utils import timezone
 from django.core.exceptions import ObjectDoesNotExist
-from ups.models import mirai_check_args, mirai_initialize_ups_pkt, PickTicket
-from ups.forms import FileNameForm
+from ups.models import mirai_check_args, mirai_initialize_ups_pkt, PickTicket, PH
+from ups.forms import FileNameForm, PickTicketForm
+from django.forms.models import inlineformset_factory
 
 # Create your views here.
 def index(request):
@@ -20,6 +21,25 @@ def pick_ticket_detail(request, pk):
     except ObjectDoesNotExist:
         return render(request,'ups/pick_ticket_detail.html', {'error_message':'PickTicket '+str(pk)+' doesn''t exist'})
     return render(request,'ups/pick_ticket_detail.html', {'ups_pkt':ups_pkt})
+
+def pick_ticket_edit(request, pk):
+    try:
+        ups_pkt=PickTicket.objects.get(pk=pk)
+    except ObjectDoesNotExist:
+        return render(request,'ups/pick_ticket_edit.html', {'error_message':'PickTicket '+str(pk)+' doesn''t exist',})
+    PktInlineFormSet = inlineformset_factory(PickTicket, PH)
+    #pktForm=PickTicketForm(instance=ups_pkt)
+    if request.method == "POST":
+        formset = PktInlineFormSet(request.POST, request.FILES, instance=ups_pkt)
+        if formset.is_valid():
+            formset.save()
+            # Do something. Should generally end with a redirect. For example:
+            return HttpResponseRedirect(ups_pkt.get_absolute_url())
+    else:
+        formset = PktInlineFormSet(instance=ups_pkt)
+    return render_to_response("ups/pick_ticket_edit.html", {
+        "ups_pkt":ups_pkt, "formset": formset,
+    })
 
 def pick_ticket_report(request, pk):
     try:

@@ -1,6 +1,21 @@
 {% extends "base/base.html" %}
 {% load staticfiles %}
+{% block extra_scripts %}
+    <script>
+        $(document).ready(function(){
+            $("#tab1").focus();
+        });
+    </script>
+{% endblock extra_scripts %}
 {% block content %}
+     <div class="pkt-info">
+        <p>
+        <span class="pkt-report-header">PickTicket:</span><br/>
+        id = {{ ups_pkt.id }}<br/>
+        fileName = {{ ups_pkt.fileName }}<br/>
+        DOC_DATE = {{ ups_pkt.DOC_DATE }}
+        </p>
+    </div>
     {% if error_message %}
         <p class="pkt-warning">{{ error_message }}</p>
     {% endif %}
@@ -13,4 +28,7 @@
         <iframe class="iframe-report" src="{% url 'ups:pick_ticket_error_report' ups_pkt.id %}" name="iframe_report">
         </iframe>
     {% endif %}
+    <div>
+        <a class="pkt-action-btns" href="{% url 'ups:pick_ticket_edit' ups_pkt.id %}"><button type="button">Edit</button></a> 
+    </div>
 {% endblock content %}

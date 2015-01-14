@@ -86,3 +86,6 @@ ul.tabbed-menu a:focus {
      height: 300px;
 }
 
+a.pkt-action-btns {
+    text-decoration: none;
+}

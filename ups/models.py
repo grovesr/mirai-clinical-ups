@@ -2,6 +2,7 @@ from django.db import models
 import urllib2
 import re
 from django.utils import timezone
+import datetime
 import time
 import random
 import os
@@ -93,7 +94,7 @@ def mirai_initialize_ups_pkt(files,inputType):
     for f,contents in files.iteritems():
         queryFileTimeStamp=time.time()
         header=True
-        recordNumber=0
+        recordNumber=1
         for fileLine in contents.splitlines():
             if header:
                 # assume header is the first line
@@ -148,7 +149,6 @@ class PickTicket(models.Model):
     # TRL section
     TRL_REC_TYPE=models.CharField(max_length=3, default='TRL')              # 3 char
     #
-    parseErrors=models.TextField(default='') # dictionary of various errors related to parsed files
     fileName=models.URLField(default='')
     fileContents=models.TextField(default='')
     
@@ -197,140 +197,161 @@ class PickTicket(models.Model):
             #for each custOrder line with a given unique orderId
             for coLine in coLines:
                 phIndex+=2
-                phItem.WHSE=self.warehouse[:3]
-                phItem.CO=self.CMPY_NAME[:10]
-                phItem.DIV=self.division[:10]
-                phItem.STAT_CODE='10'
-                phItem.PKT_PROFILE_ID=phItem.CO+phItem.DIV
-                phItem.PKT_CTRL_NBR=('MC'+self.timeStamp)[:10]
-                phItem.LANG_ID='EN'
-                phItem.PH1_FREIGHT_TERMS='0'
-                phItem.PHI_SPL_INSTR_NBR='{:03}'.format(phIndex)
-                phItem.PHI_SPL_INSTR_TYPE='QV'
-                phItem.PHI_SPL_INSTR_CODE='01,08'
+                if len(phItem.WHSE) == 0:
+                    phItem.WHSE=self.warehouse[:3]
+                if len(phItem.CO) == 0:
+                    phItem.CO=self.CMPY_NAME[:10]
+                if len(phItem.DIV) == 0:
+                    phItem.DIV=self.division[:10]
+                if len(phItem.STAT_CODE) == 0:
+                    phItem.STAT_CODE='10'
+                if len(phItem.PKT_PROFILE_ID) == 0:
+                    phItem.PKT_PROFILE_ID=phItem.CO+phItem.DIV
+                if len(phItem.PKT_CTRL_NBR) == 0:
+                    phItem.PKT_CTRL_NBR=('MC'+self.timeStamp)[:10]
+                if len(phItem.LANG_ID) == 0:
+                    phItem.LANG_ID='EN'
+                if len(phItem.PH1_FREIGHT_TERMS) == 0:
+                    phItem.PH1_FREIGHT_TERMS='0'
+                if len(phItem.PHI_SPL_INSTR_NBR) == 0:
+                    phItem.PHI_SPL_INSTR_NBR='{:03}'.format(phIndex)
+                if len(phItem.PHI_SPL_INSTR_TYPE) == 0:
+                    phItem.PHI_SPL_INSTR_TYPE='QV'
+                if len(phItem.PHI_SPL_INSTR_CODE) == 0:
+                    phItem.PHI_SPL_INSTR_CODE='01,08'
                 phItem.coHeader=coLine.coHeader
                 phItem.ups_pkt=self
-                if phItem.parse(coLine) < 0:
-                    # unable to create a PH object from this. Append to any errors already 
-                    coLine.parseError+='PARSE ERROR: Unable to create PH item: from CustOrder&'
-                    coLine.save()
-                else:
-                    itemIndex+=1
-                    # save the PH object so we have an ID to save with the PD objects being added below
-                    phItem.save()
-                    phItem.add_detail(itemIndex,coLine)
-                    lineError=phItem.check_line()
-                    if lineError != '':
-                        # some missing information in this line item, generate an error
-                        coLine.parseError+=lineError
-                        coLine.save()
-                    phItem.save()
+                phItem.parse(coLine)
+                itemIndex+=1
+                # save the PH object so we have an ID to save with the PD objects being added below
+                phItem.save()
+                phItem.add_detail(itemIndex,coLine)
+            phItem.save()
         return 0
     
     def parse_html_error_report(self):
-        reMatchParseError=re.compile('.*PARSE ERROR.*')
-        reMatchFileError=re.compile('.*FILE ERROR.*')
-        reMatchURLError=re.compile('.*URL ERROR.*')
-        totalErrors=0
         reportHtml=''
-        # get the ids of the file(s) used to create this pickticket 
-        orderIds=CustOrderQueryRow.objects.filter(ups_pkt=self.id).values('queryId').distinct()
-        reportHtml+='<p><ul class="parse-errors">'
-        for orderId in orderIds:
-        # for each file check to see if any errors were generated
-            errorRows=CustOrderQueryRow.objects.filter(queryId=orderId['queryId']).filter(parseError__contains='ERROR')
-            if len(errorRows)>0:
-                # found some errors with this file
-                reportHtml+='<li><span class="pkt-error-text">Parse errors for File: "'+errorRows[0].query+'"</span>'
+        reportHtml+='<p><ul class="parse-errors">' # open phError paragraph
+        # we have recorded the errors, now let's output the error report for each file
+        headerIds=PH.objects.filter(ups_pkt=self.id).values('coHeader').distinct()
+        totalErrors=0
+        for headerId in headerIds:
+            phErrors=0
+            pdErrors=0
+            header=CustOrderHeader.objects.get(pk=headerId['coHeader'])
+            query=header.query
+            # PH items associated with this query file
+            phItems=PH.objects.filter(ups_pkt=self.id).filter(coHeader=headerId['coHeader'])
+            for phItem in phItems:
+                if not phItem.check_fields():
+                    phErrors+=1
+                pdItems=PD.objects.filter(ups_ph=phItem.id)
+                for pdItem in pdItems:
+                    if not pdItem.check_fields():
+                        pdErrors+=1
+            if phErrors>0 or pdErrors >0:
+                reportHtml+='<li><span class="pkt-error-text">Parse errors for File: "'+query+'"</span>'
                 reportHtml+='<ul class="parse-errors">'
-                for errorRow in errorRows:
+            for phItem in phItems:
+                if not phItem.check_fields():
                     totalErrors+=1
-                    parseList=errorRow.parseError.split('&')
-                    if parseList[-1] == '':
-                        parseList=parseList[:-1]
-                    # assume the errors come in title/value pairs
-                    for parseError in parseList:
-                        if reMatchParseError.match(parseError) or reMatchFileError.match(parseError) or reMatchURLError.match(parseError):
-                            reportHtml+='<li>'+parseError+'<ul class="parse-errors">'
-                        else:
-                            reportHtml+='<li class="pkt-text">'+parseError+' file line #: '+str(errorRow.queryRecordNumber)+'</li>'
-                            reportHtml+='</ul></li>'
-                reportHtml+='</ul>'
-                reportHtml+='</li>'
-        reportHtml+='</ul></p>'
+                    reportHtml+='<li class="pkt-text">PH error for order#: '+phItem.PH1_CUST_PO_NBR # write out the PH errors
+                    reportHtml+='<ul class="parse-errors">'
+                    for errorItem in phItem.check_line().split(r'&'):
+                        reportHtml+='<li class="pkt-text">'+errorItem+'</li>'
+                    reportHtml+='</ul>' # close the ph error item list
+                pdErrorItems=[]
+                for pdItem in pdItems:
+                    if not pdItem.check_fields():
+                        pdErrorItems.append(pdItem)
+                if len(pdErrorItems)>0:
+                    reportHtml+='<ul class="parse-errors">' # open the phError PD list
+                for pdItem in pdErrorItems:
+                    totalErrors+=1
+                    reportHtml+='<li class="pkt-text">'+pdItem.check_line()+' File line #: '+str(pdItem.coQueryRow.queryRecordNumber)+')</li>'
+                if len(pdErrorItems)>0:
+                    reportHtml+='</ul>' # close the pdItems list
+                if not phItem.check_fields():
+                    reportHtml+='</li>'# close the ph errors list item
+            if phErrors>0 or pdErrors >0:
+                reportHtml+='</ul>' # close the ph errors list
+                reportHtml+='</li>' # close the file list item
+        reportHtml+='</ul>' # close the paresErrors list
+        reportHtml+='</p>' # close the error paragraph
         if totalErrors==0:
             reportHtml='<p class="pkt-warning">No errors to report</p>'
         return reportHtml
     
     def parse_html_pkt_report(self):
         reportHtml=''
-        reportHtml+='<p>PH Items:' # open phItems paragraph
+        phItems=PH.objects.filter(ups_pkt=self.id)
+        reportHtml+='<p>PH Items ('+str(phItems.count())+'):' # open phItems paragraph
         # we have recorded the errors, now let's output the report for each order
-        for phItem in PH.objects.filter(ups_pkt=self.id):
+        for phItem in phItems:
             reportHtml+='<ul class="ph-items">' # open customer main list
-            reportHtml+='<li>Customer: '+phItem.SHIPTO_NAME+'' # open main customer list item
+            reportHtml+=self.format_pkt_report_html_field(phItem,'SHIPTO_NAME') # open main customer list item
             reportHtml+='<ul class="ph-items">' # open first list within customer
-            if phItem.error:
+            if not phItem.check_fields():
                 reportHtml+='<li class="pkt-error-text" >File: "'+phItem.coHeader.query+'"</li>'
             else:
                 reportHtml+='<li class="pkt-text">File "'+phItem.coHeader.query+'"</li>'
-            reportHtml+='<li>Order Date: '+phItem.PH1_ORD_DATE.strftime('%m/%d/%y %H:%M:%S')+'</li>'
-            reportHtml+='<li>Order #: '+phItem.PH1_CUST_PO_NBR+'</li>'
-            reportHtml+='<li>Address:' # open customer address list item, end span phSub1
+            reportHtml+=self.format_pkt_report_html_field(phItem,'PH1_ORD_DATE')
+            reportHtml+=self.format_pkt_report_html_field(phItem,'PH1_CUST_PO_NBR')
+            reportHtml+='<li><span class="pkt-text">Address:</span>' # open customer address list item, end span phSub1
             reportHtml+='<ul class="ph-items">' # open list within customer address
-            reportHtml+='<li><span class="pkt-param-text">SHIPTO_ADDR_1:</span> '+phItem.SHIPTO_ADDR_1+'</li>'
-            reportHtml+='<li><span class="pkt-param-text">SHIPTO_ADDR_2:</span> '+phItem.SHIPTO_ADDR_2+'</li>'
-            reportHtml+='<li><span class="pkt-param-text">SHIPTO_ADDR_3:</span> '+phItem.SHIPTO_ADDR_3+'</li>'
-            reportHtml+='<li><span class="pkt-param-text">SHIPTO_CITY:</span> '+phItem.SHIPTO_CITY+'</li>'
-            reportHtml+='<li><span class="pkt-param-text">SHIPTO_STATE:</span> '+phItem.SHIPTO_STATE+'</li>'
-            reportHtml+='<li><span class="pkt-param-text">SHIPTO_ZIP:</span> '+phItem.SHIPTO_ZIP+'</li>'
-            reportHtml+='<li><span class="pkt-param-text">SHIPTO_CNTRY:</span> '+phItem.SHIPTO_CNTRY+'</li>'
+            reportHtml+=self.format_pkt_report_html_field(phItem,'SHIPTO_ADDR_1')
+            reportHtml+=self.format_pkt_report_html_field(phItem,'SHIPTO_ADDR_2')
+            reportHtml+=self.format_pkt_report_html_field(phItem,'SHIPTO_ADDR_3')
+            reportHtml+=self.format_pkt_report_html_field(phItem,'SHIPTO_CITY')
+            reportHtml+=self.format_pkt_report_html_field(phItem,'SHIPTO_STATE')
+            reportHtml+=self.format_pkt_report_html_field(phItem,'SHIPTO_ZIP')
+            reportHtml+=self.format_pkt_report_html_field(phItem,'SHIPTO_CNTRY')
             reportHtml+='</ul>' # end list within customer address
             reportHtml+='</li>' # end customer address list item
-            reportHtml+='<li><span class="pkt-param-text">PH1_CUST_PO_NBR:</span> '+phItem.PH1_CUST_PO_NBR+'</li>'
-            reportHtml+='<li><span class="pkt-param-text">SHIP_VIA:</span> '+phItem.SHIP_VIA+'</li>'
-            reportHtml+='<li><span class="pkt-param-text">ORD_TYPE:</span> '+phItem.ORD_TYPE+'</li>'
-            reportHtml+='<li><span class="pkt-param-text">PKT_CNTRL_NBR:</span> '+phItem.PKT_CTRL_NBR+'</li>'
-            reportHtml+='<li><span class="pkt-param-text">PH1_PROD_VALUE:</span> '+phItem.PH1_PROD_VALUE+'</li>'
-            reportHtml+='<li><span class="pkt-param-text">PH1_FREIGHT_TERMS:</span> '+phItem.PH1_FREIGHT_TERMS+'</li>'
-            for code in phItem.PHI_SPL_INSTR_CODE.split(r','):
-                reportHtml+='<li><span class="pkt-param-text">PHI_SPL_INSTR_CODE:</span> '+code+'</li>'
-            reportHtml+='<li>Items:' # open customer items list
+            reportHtml+=self.format_pkt_report_html_field(phItem,'PH1_CUST_PO_NBR')
+            reportHtml+=self.format_pkt_report_html_field(phItem,'SHIP_VIA')
+            reportHtml+=self.format_pkt_report_html_field(phItem,'ORD_TYPE')
+            reportHtml+=self.format_pkt_report_html_field(phItem,'PKT_CTRL_NBR')
+            reportHtml+=self.format_pkt_report_html_field(phItem,'PH1_PROD_VALUE')
+            reportHtml+=self.format_pkt_report_html_field(phItem,'PH1_FREIGHT_TERMS')
+            reportHtml+=self.format_pkt_report_html_field(phItem,'PHI_SPL_INSTR_CODE')
+            reportHtml+='<li><span class="pkt-text">Items:</span>' # open customer items list
             reportHtml+='<ul class="ph-items">' # open list within customer items
             for pdItem in PD.objects.filter(ups_ph=phItem.id):
-                if pdItem.error:
+                if not pdItem.check_fields():
                     reportHtml+='<li><span class="pkt-error-text"> file line #: '+str(pdItem.coQueryRow.queryRecordNumber)+'</span>'
                 else:
                     reportHtml+='<li><span class="pkt-text"> file line #: '+str(pdItem.coQueryRow.queryRecordNumber)+'</span>'
                 reportHtml+='<ul class="ph-items">' # start list of PD info parsed from this file line
-                reportHtml+='<li><span class="pkt-param-text">PKT_SEQ_NBR:</span> '+pdItem.PKT_SEQ_NBR+'</li>'
-                reportHtml+='<li><span class="pkt-param-text">ORIG_ORD_QTY:</span> '+pdItem.ORIG_ORD_QTY+'</li>'
-                reportHtml+='<li><span class="pkt-param-text">PKT_ORD_QTY:</span> '+pdItem.ORIG_PKT_QTY+'</li>'
-                reportHtml+='<li><span class="pkt-param-text">CUST_SKU:</span> '+pdItem.CUST_SKU+'</li>'
+                reportHtml+=self.format_pkt_report_html_field(pdItem,'PKT_SEQ_NBR')
+                reportHtml+=self.format_pkt_report_html_field(pdItem,'ORIG_ORD_QTY')
+                reportHtml+=self.format_pkt_report_html_field(pdItem,'ORIG_PKT_QTY')
+                reportHtml+=self.format_pkt_report_html_field(pdItem,'CUST_SKU')
                 reportHtml+='</ul>' # end list of PD info
             reportHtml+='</li>' # end list item for this file line #
             reportHtml+='</ul>' # end list within customer items
             reportHtml+='</ul>' # close main list within customer
-            reportHtml+='</li>' # close main customer list item
+            #reportHtml+='</li>' # close main customer list item
             reportHtml+='</ul>' # close main customer list
             reportHtml+='</p>' # close PhItems paragraph
         return reportHtml
     
     def parse_html_report(self):
         reportHtml=''
-        reportHtml+='<p>PH Items:' # open phItems paragraph
+        phItems=PH.objects.filter(ups_pkt=self.id)
+        reportHtml+='<p>PH Items ('+str(phItems.count())+'):' # open phItems paragraph
         # we have recorded the errors, now let's output the report for each order
-        for phItem in PH.objects.filter(ups_pkt=self.id):
+        for phItem in phItems:
             reportHtml+='<ul class="ph-items">' # open customer main list
-            reportHtml+='<li>Customer: '+phItem.SHIPTO_NAME+'' # open main customer list item
+            reportHtml+='<li><span class="pkt-text">Customer:</span> '+phItem.SHIPTO_NAME+'' # open main customer list item
             reportHtml+='<ul class="ph-items">' # open first list within customer
-            if phItem.error:
+            if not phItem.check_fields():
                 reportHtml+='<li class="pkt-error-text">File: "'+phItem.coHeader.query+'"</li>'
             else:
                 reportHtml+='<li class="pkt-text">File: "'+phItem.coHeader.query+'"</li>'
-            reportHtml+='<li>Order Date: '+phItem.PH1_ORD_DATE.strftime('%m/%d/%y %H:%M:%S')+'</li>'
-            reportHtml+='<li>Order #: '+phItem.PH1_CUST_PO_NBR+'</li>'
-            reportHtml+='<li>Address:' # open customer address list item, end span phSub1
+            reportHtml+='<li class="pkt-text">Order Date: '+phItem.PH1_ORD_DATE.strftime('%m/%d/%y %H:%M:%S')+'</li>'
+            reportHtml+='<li class="pkt-text">Order #: '+phItem.PH1_CUST_PO_NBR+'</li>'
+            reportHtml+='<li class="pkt-text">Address:' # open customer address list item, end span phSub1
             reportHtml+='<ul class="ph-items">' # open list within customer address
             reportHtml+='<li>'+phItem.SHIPTO_ADDR_1+'</li>'
             if phItem.SHIPTO_ADDR_2 != "":
@@ -350,6 +371,32 @@ class PickTicket(models.Model):
             reportHtml+='</ul>' # close main customer list
             reportHtml+='</p>' # close PhItems paragraph
         return reportHtml
+    
+    def format_pkt_report_html_field(self,obj,fieldName):
+        fieldHtml=''
+        # check to see if this field has a value we can check
+        try:
+            field=getattr(obj,fieldName)
+        except:
+            return fieldHtml
+        if isinstance(field,datetime.datetime):
+            field=field.strftime('%m/%d/%y %H:%M:%S')
+        requiredFieldNames=[]
+        for requiredField in obj.required_fields():
+            requiredFieldNames.append(requiredField.name)
+        if fieldName not in requiredFieldNames:
+            return '<li><span class="pkt-param-text">&nbsp;'+fieldName+':</span><span class="pkt-text">'+field+'</span></li>'
+        if fieldName == 'PHI_SPL_INSTR_CODE':
+            for code in field.split(r','):
+                fieldHtml+='<li><span class="pkt-param-text">*PHI_SPL_INSTR_CODE:</span> '+code+'</li>'
+            return fieldHtml
+        if len(field) == 0:
+            # the attribute hasn't been set
+            fieldHtml+='<li><span class="pkt-param-text">*'+fieldName+':</span><span class="pkt-error-text">missing</span></li>'
+        else:
+            # the attribute has been set
+            fieldHtml+='<li><span class="pkt-param-text">*'+fieldName+':</span><span class="pkt-text">'+field+'</span></li>'
+        return fieldHtml
     
 class CustOrderHeader(models.Model):
     """
@@ -371,7 +418,6 @@ class CustOrderQueryRow(models.Model):
     QueryRecordNumber provides the line number within the query file for a given record for error reporting
     QueryId is the unique timestamp that ties together the query rows for a given query
     Sep gives a clue to how to parse the record
-    parseError holds any errors generated when parsing information out of the row 
     """
     ups_pkt = models.ForeignKey(PickTicket)
     coHeader=models.ForeignKey(CustOrderHeader)
@@ -379,7 +425,6 @@ class CustOrderQueryRow(models.Model):
     queryId=models.FloatField(default=0)
     queryRecordNumber=models.IntegerField(default=0)
     record=models.TextField(default='')
-    parseError=models.TextField(default='')
     sep=models.CharField(max_length=1,default='\t')
     type=models.CharField(max_length=20, default='')
     purchaseDate=models.DateTimeField(blank=True,default=timezone.now())
@@ -579,7 +624,6 @@ class PH(models.Model):
     itemIndex = models.IntegerField(default=0)
     ups_pkt=models.ForeignKey(PickTicket)
     coHeader=models.ForeignKey(CustOrderHeader)
-    error=models.BooleanField(default=False)
     REC_TYPE=models.CharField(max_length=2,default='PH')                   # 2 char
     WHSE=models.CharField(max_length=3,default='')                         # 3 char
     CO=models.CharField(max_length=10,default='')                          # 10 char
@@ -591,17 +635,17 @@ class PH(models.Model):
     PKT_SFX=models.CharField(max_length=3,default='',blank=True)            # opt. 3 char
     ORD_NBR=models.CharField(max_length=3,default='',blank=True)            # opt. 3 char
     ORD_SFX=models.CharField(max_length=3,default='',blank=True)            # opt. 3 char
-    ORD_TYPE=models.CharField(max_length=2,default='',blank=True)           #opt. 2 char
-    SHIPTO=models.CharField(max_length=10,default='',blank=True)            # opt 10 char
-    SHIPTO_NAME=models.CharField(max_length=35,default='')                 # 35 characters
-    SHIPTO_CONTACT=models.CharField(max_length=30,default='')              # 30 characters
-    SHIPTO_ADDR_1=models.CharField(max_length=75,default='',blank=True)     # opt. 75 char
+    ORD_TYPE=models.CharField(max_length=2,default='')           #opt. 2 char
+    SHIPTO=models.CharField(max_length=10,default='', blank=True)            # opt 10 char
+    SHIPTO_NAME=models.CharField(max_length=35,default='')     # 35 characters
+    SHIPTO_CONTACT=models.CharField(max_length=30,default='', blank=True)              # 30 characters
+    SHIPTO_ADDR_1=models.CharField(max_length=75,default='')     # opt. 75 char
     SHIPTO_ADDR_2=models.CharField(max_length=75,default='',blank=True)     # opt. 75 char
     SHIPTO_ADDR_3=models.CharField(max_length=75,default='',blank=True)     # opt. 75 char
-    SHIPTO_CITY=models.CharField(max_length=40,default='',blank=True)       # opt. 40 char
-    SHIPTO_STATE=models.CharField(max_length=3,default='',blank=True)       # opt. 3 char
-    SHIPTO_ZIP=models.CharField(max_length=11,default='',blank=True)        # opt. 11 char
-    SHIPTO_CNTRY=models.CharField(max_length=4,default='',blank=True)       # opt. 4 char
+    SHIPTO_CITY=models.CharField(max_length=40,default='')       # opt. 40 char
+    SHIPTO_STATE=models.CharField(max_length=3,default='')       # opt. 3 char
+    SHIPTO_ZIP=models.CharField(max_length=11,default='')        # opt. 11 char
+    SHIPTO_CNTRY=models.CharField(max_length=4,default='', blank=True)       # opt. 4 char
     TEL_NBR=models.CharField(max_length=15,default='',blank=True)           # opt. 15 char
     SOLDTO=models.CharField(max_length=10,default='',blank=True)            # opt. 10 char
     SOLDTO_NAME=models.CharField(max_length=35,default='',blank=True)       # opt. 35 char
@@ -612,7 +656,7 @@ class PH(models.Model):
     SOLDTO_STATE=models.CharField(max_length=3,default='',blank=True)       # opt. 3 char
     SOLDTO_ZIP=models.CharField(max_length=11,default='',blank=True)        # opt. 11 char
     SOLDTO_CNTRY=models.CharField(max_length=4,default='',blank=True)       # opt. 4 char
-    SHIP_VIA=models.CharField(max_length=4,default='UUS2',blank=True)       # opt. 4 char (Surepost=UUS2, UPS grnd=UU10)
+    SHIP_VIA=models.CharField(max_length=4,default='UUS2')       # opt. 4 char (Surepost=UUS2, UPS grnd=UU10)
     CARTON_LABEL_TYPE=models.CharField(max_length=3,default='',blank=True)  # opt. 3 char
     NBR_OF_LABEL=models.CharField(max_length=3,default='',blank=True)       # opt. 3 char
     CONTNT_LABEL_TYPE=models.CharField(max_length=3,default='',blank=True)  # opt. 3 char
@@ -625,7 +669,7 @@ class PH(models.Model):
     PH1_REC_TYPE=models.CharField(max_length=3,default='PH1')                     # 3 char
     PH1_ACCT_RCVBL_ACCT_NBR=models.CharField(max_length=10,default='',blank=True) # opt. 10 char
     PH1_ACCT_RCVBL_CODE=models.CharField(max_length=2,default='',blank=True)      # opt. 2 char
-    PH1_CUST_PO_NBR=models.CharField(max_length=26,default='',blank=True)         # opt. 26 char
+    PH1_CUST_PO_NBR=models.CharField(max_length=26,default='')         # opt. 26 char
     PH1_PRTY_CODE=models.CharField(max_length=2,default='',blank=True)            # opt. 2 char
     PH1_PRTY_SFX=models.CharField(max_length=3,default='',blank=True)             # opt. 2 char
     PH1_ORD_DATE=models.DateTimeField(blank=True)                                 # opt. 14 char MM/DD/YY
@@ -649,7 +693,7 @@ class PH(models.Model):
     PH1_TOTAL_DLRS_DISC=models.CharField(max_length=11,default='',blank=True)     # opt. 11 char
     PH1_CURR_CODE=models.CharField(max_length=10,default='',blank=True)           # opt. 10 char
     PH1_PROD_VALUE=models.CharField(max_length=11,default='',blank=True)          # opt. 11 char
-    PH1_FREIGHT_TERMS=models.CharField(max_length=1,default='',blank=True)        # opt. 1 char 0 = Prepaid (Default),1 = Collect Billing,1 0:1,2 = Consignee Billing.3 = Third Party Billing
+    PH1_FREIGHT_TERMS=models.CharField(max_length=1,default='')        # opt. 1 char 0 = Prepaid (Default),1 = Collect Billing,1 0:1,2 = Consignee Billing.3 = Third Party Billing
     PH1_MARK_FOR=models.CharField(max_length=25,default='',blank=True)            # opt. 25 char
     PH1_INCO_TERMS=models.CharField(max_length=3,default='',blank=True)           # opt. 3 char
     PH1_BILL_ACCT_NBR=models.CharField(max_length=10,default='',blank=True)       # opt. 10 char
@@ -660,8 +704,8 @@ class PH(models.Model):
     PHI_SPL_INSTR_NBR=models.CharField(max_length=3,default='')                  # 3 char
     PHI_SPL_INSTR_TYPE=models.CharField(max_length=2,default='')                 # 2 char
     PHI_SPL_INSTR_CODE=models.CommaSeparatedIntegerField(max_length=11,default='08')# 2 char list from: (01=shipment,02=delivery,04=exception,08=delivery failure)
-    PHI_SPL_INSTR_DESC=models.CharField(max_length=135,default='')               # 135 char
-    PHI_PKT_PROFILE_ID=models.CharField(max_length=10,default='')                # 10 char
+    PHI_SPL_INSTR_DESC=models.CharField(max_length=135,default='', blank=True)               # 135 char
+    PHI_PKT_PROFILE_ID=models.CharField(max_length=10,default='', blank=True)                # 10 char
 
 
 
@@ -673,19 +717,32 @@ class PH(models.Model):
         try:
             self.PH1_ORD_DATE=coLine.purchaseDate
             self.PH1_START_SHIP_DATE=coLine.purchaseDate
-            self.PH1_CUST_PO_NBR=coLine.orderId[:26]
-            self.SHIPTO_NAME=coLine.shipToName[:35]
-            self.SHIPTO_ADDR_1=coLine.shipToAddress1[:75]
-            self.SHIPTO_ADDR_2=coLine.shipToAddress2[:75]
-            self.SHIPTO_ADDR_3=coLine.shipToAddress3[:75]
-            self.SHIPTO_CITY=coLine.shipToCity[:40]
-            self.SHIPTO_STATE=coLine.shipToState[:3]
-            self.SHIPTO_ZIP=coLine.shipToZip[:11]
-            self.SHIPTO_CNTRY=coLine.shipToCntry[:4]
-            self.PACK_SLIP_TYPE=coLine.packSlipType[:2]
-            self.ORD_TYPE=coLine.orderType[:2]
-            self.SHIP_VIA=self.parse_ship_via(coLine.serviceLevel)
-            self.PHI_SPL_INSTR_DESC=coLine.buyerEmail[:135]
+            if len(self.PH1_CUST_PO_NBR) == 0:
+                self.PH1_CUST_PO_NBR=coLine.orderId[:26]
+            if len(self.SHIPTO_NAME) == 0:
+                self.SHIPTO_NAME=coLine.shipToName[:35]
+            if len(self.SHIPTO_ADDR_1) == 0:
+                self.SHIPTO_ADDR_1=coLine.shipToAddress1[:75]
+            if len(self.SHIPTO_ADDR_2) == 0:
+                self.SHIPTO_ADDR_2=coLine.shipToAddress2[:75]
+            if len(self.SHIPTO_ADDR_3) == 0:
+                self.SHIPTO_ADDR_3=coLine.shipToAddress3[:75]
+            if len(self.SHIPTO_CITY) == 0:
+                self.SHIPTO_CITY=coLine.shipToCity[:40]
+            if len(self.SHIPTO_STATE) == 0:
+                self.SHIPTO_STATE=coLine.shipToState[:3]
+            if len(self.SHIPTO_ZIP) == 0:
+                self.SHIPTO_ZIP=coLine.shipToZip[:11]
+            if len(self.SHIPTO_CNTRY) == 0:
+                self.SHIPTO_CNTRY=coLine.shipToCntry[:4]
+            if len(self.PACK_SLIP_TYPE) == 0:
+                self.PACK_SLIP_TYPE=coLine.packSlipType[:2]
+            if len(self.ORD_TYPE) == 0:
+                self.ORD_TYPE=coLine.orderType[:2]
+            if len(self.SHIP_VIA) == 0:
+                self.SHIP_VIA=self.parse_ship_via(coLine.serviceLevel)
+            if len(self.PHI_SPL_INSTR_DESC) == 0:
+                self.PHI_SPL_INSTR_DESC=coLine.buyerEmail[:135]
         except:
             return(-1)
         return(0)
@@ -708,11 +765,6 @@ class PH(models.Model):
         pdItem.STAT_CODE='00'
         pdItem.ups_ph=self
         pdItem.coQueryRow=coLine
-        lineError=pdItem.check_line()
-        if lineError != '':
-            # some missing information in this line item, generate an error
-            coLine.parseError+=lineError
-            coLine.save()
         pdItem.save()
     
     def check_line(self):
@@ -722,8 +774,6 @@ class PH(models.Model):
             self.SHIPTO_CNTRY == '' or self.SHIPTO_ZIP == '' or self.PH1_FREIGHT_TERMS == '' or 
             self.ORD_TYPE == '' or self.SHIP_VIA == '' or self.PKT_CTRL_NBR == '' or 
             self.PHI_SPL_INSTR_NBR == '' or self.PHI_SPL_INSTR_TYPE == '' or self.PHI_SPL_INSTR_CODE == ''):
-            self.error=True
-            errorLine='PARSE ERROR (PH): missing data:&'
             if self.PH1_CUST_PO_NBR == '':
                 errorLine+='"Customer PO # (order #)" missing, '
             if self.SHIPTO_NAME == '':
@@ -754,6 +804,60 @@ class PH(models.Model):
                 errorLine+='"Special Instruction Code" missing, '
             errorLine+='&'
         return(errorLine)
+    
+    def required_fields(self):
+        """
+        return required fields
+        """
+        fieldList=[]
+        for field in self._meta.fields:
+            if not field.blank:
+                try:
+                    # check to see if this field has a value
+                    getattr(self,field.name)
+                    # if we made it this far, this is a normal field
+                    fieldList.append(field)
+                except:
+                    # if not ignore it
+                    pass
+        return fieldList
+    
+    def check_fields(self):
+        """
+        check to see if any required fields are empty
+        """
+        for field in self.required_fields():
+            try:
+                # check to see if this field has a value, if so check that value
+                if not self.check_field_attr(field.name,getattr(self,field.name)):
+                    return False
+            except:
+                # if not ignore it
+                pass
+        return True
+    
+    def check_field_attr(self,fieldName,fieldAttr):
+        """
+        check to see if a particular required field is empty
+        """
+        fieldVal=''
+        if fieldName == 'PHI_SPL_INSTR_CODE':
+            code=''
+            for code in fieldAttr.split(r','):
+                fieldVal+=code
+            return len(fieldVal)>0
+        if isinstance(fieldVal,datetime.datetime):
+            fieldVal=fieldAttr.strftime('%m/%d/%y %H:%M:%S')
+        else:
+            fieldVal=fieldAttr
+        if len(fieldVal) == 0:
+            # the attribute hasn't been set
+            return False
+        else:
+            # the attribute has been set
+            return True
+        # if we got here, something went wrong, just return false
+        return False
     
     def ph_item(self):
         phItem=''
@@ -808,8 +912,6 @@ class PD(models.Model):
     SEP=models.CharField(max_length=1,default='|') # record separator
     ups_ph=models.ForeignKey(PH)
     coQueryRow=models.ForeignKey(CustOrderQueryRow)
-    error=models.BooleanField(default=False)
-    
     # PD section
     # key for PD hash tables is PKT_SEQ_NBR
     REC_TYPE=models.CharField(max_length=2,default='PD')                       # 2 char
@@ -827,12 +929,12 @@ class PD(models.Model):
     SIZE_RANGE_CODE=models.CharField(max_length=4,default='',blank=True)       # opt. 4 char
     SIZE_REL_POSN_IN_TABLE=models.CharField(max_length=4,default='',blank=True)# opt. 2 char
     SIZE_DESC=models.CharField(max_length=15,default='',blank=True)            # opt. 15 char
-    ORIG_ORD_QTY=models.CharField(max_length=9,default='',blank=True)          # 9 char
+    ORIG_ORD_QTY=models.CharField(max_length=9,default='')          # 9 char
     ORIG_PKT_QTY=models.CharField(max_length=9,default='',blank=True)          # 9 char
     CANCEL_QTY=models.CharField(max_length=9,default='',blank=True)            # opt. 9 char
     CUBE_MULT_QTY=models.CharField(max_length=9,default='',blank=True)         # opt. 9 char
     BACK_ORD_QTY=models.CharField(max_length=9,default='',blank=True)          # opt. 9 char
-    CUST_SKU=models.CharField(max_length=20,default='',blank=True)             # opt. 20 char
+    CUST_SKU=models.CharField(max_length=20,default='')             # opt. 20 char
                                         # opt. PD1 section
                                         # opt. PD2 section
                                         # opt. PD3 section
@@ -856,8 +958,6 @@ class PD(models.Model):
     def check_line(self):
         errorLine=''
         if self.CUST_SKU == '' or self.ORIG_ORD_QTY == '' or self.PKT_SEQ_NBR == '':
-            self.error=True
-            errorLine='PARSE ERROR (PD): missing data:&'
             if self.CUST_SKU == '':
                 errorLine+='"SKU" missing, '
             if self.ORIG_ORD_QTY == '':
@@ -866,7 +966,49 @@ class PD(models.Model):
                 errorLine+='"Pickticket Sequence Number" missing, '
             errorLine+='&'
         return(errorLine)
+    def required_fields(self):
+        """
+        return required fields
+        """
+        fieldList=[]
+        for field in self._meta.fields:
+            if not field.blank:
+                try:
+                    # check to see if this field has a value
+                    getattr(self,field.name)
+                    # if we made it this far, this is a normal field
+                    fieldList.append(field)
+                except:
+                    # if not ignore it
+                    pass
+        return fieldList
     
+    def check_fields(self):
+        """
+        check to see if any required fields are empty
+        """
+        for field in self.required_fields():
+            try:
+                # check to see if this field has a value, if so check that value
+                if not self.check_field_attr(field.name,getattr(self,field.name)):
+                    return False
+            except:
+                # if not ignore it
+                pass
+        return True
+    
+    def check_field_attr(self,fieldName,fieldAttr):
+        """
+        check to see if a particular required field is empty
+        """
+        if len(fieldAttr) == 0:
+            # the attribute hasn't been set
+            return False
+        else:
+            # the attribute has been set
+            return True
+        # if we got here, something went wrong, just return false
+        return False
 
 
 class ShipmentOrderReport(models.Model):
@@ -967,7 +1109,7 @@ class ShipmentOrderReport(models.Model):
                     so=ShipmentOrderRow({'headers':self.headers,'fileLineNo':rowIndex+1})
                     so.read_line(line[:-1])
                     lineError=so.check_line()
-                    if lineError != '':
+                    if not so.check_fields:
                         # some missing information in this line item, generate an error
                         self.parseErrors[self.filename].append(lineError)
                     self.SO.append(so)
