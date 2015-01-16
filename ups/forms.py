@@ -1,6 +1,6 @@
 from django import forms
 from django.forms import  ModelForm
-from ups.models import PickTicket
+from ups.models import PickTicket, PH, PD
 
 class FileNameForm(forms.Form):
     files=forms.CharField(widget=forms.HiddenInput, max_length=1024)

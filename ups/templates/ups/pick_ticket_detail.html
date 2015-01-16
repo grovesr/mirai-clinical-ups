@@ -24,6 +24,7 @@
             <li><a id="tab1" href="{% url 'ups:pick_ticket_error_report' ups_pkt.id %}" target="iframe_report">Errors</a></li>
             <li><a id="tab2" href="{% url 'ups:pick_ticket_report' ups_pkt.id %}" target="iframe_report">Report</a></li>
             <li><a id="tab3" href="{% url 'ups:pick_ticket_pkt_report' ups_pkt.id %}" target="iframe_report">Pkt Report</a></li>
+            <li><a id="tab3" href="{% url 'ups:pick_ticket_file_report' ups_pkt.id %}" target="iframe_report">Pkt File</a></li>
         </ul>
         <iframe class="iframe-report" src="{% url 'ups:pick_ticket_error_report' ups_pkt.id %}" name="iframe_report">
         </iframe>

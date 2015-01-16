@@ -2,6 +2,7 @@ from django.db import models
 import urllib2
 import re
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 import datetime
 import time
 import random
@@ -125,9 +126,13 @@ def mirai_initialize_ups_pkt(files,inputType):
                 queryRow.save()
             recordNumber+=1
     result=ups_pkt.parse_po_objects()
-    ups_pkt.save()
     if result < 0:
         return result
+    pktStr=ups_pkt.create_pick_ticket_string()
+    ups_pkt.fileContents=pktStr
+    if result < 0:
+        return result
+    ups_pkt.save()
     return ups_pkt.id
 
 # Create your models here.
@@ -151,6 +156,7 @@ class PickTicket(models.Model):
     #
     fileName=models.URLField(default='')
     fileContents=models.TextField(default='')
+    fileLineSep=models.CharField(max_length=5,default=os.linesep)
     
     def __str__(self):
         res = "PickTicket instance:" + self.fileName
@@ -169,7 +175,7 @@ class PickTicket(models.Model):
     
     def trl(self):
         return((self.TRL_REC_TYPE+self.SEP+self.DOC_TYPE+self.SEP+self.CMPY_NAME+self.SEP+
-                self.DOC_DATE+self.SEP+self.trans_id()+self.SEP+self.rec_count()))
+                self.DOC_DATE.strftime("%m/%d/%y %H:%M:%S")+self.SEP+self.trans_id()+self.SEP+self.rec_count()))
     
     def trans_id(self):
         #return(self.PH[0].CO[:-1]+'1')
@@ -229,6 +235,17 @@ class PickTicket(models.Model):
             phItem.save()
         return 0
     
+    def create_pick_ticket_string(self):
+        pktStr=''
+        pktStr+=self.hdr()+os.linesep
+        pktStr+=self.ph()+os.linesep
+        pktStr+=self.trl()
+        return pktStr
+    
+    def pick_ticket_html_report(self):
+        return self.fileContents.replace(self.fileLineSep,'<br/>')
+        
+    
     def parse_html_error_report(self):
         reportHtml=''
         reportHtml+='<p><ul class="parse-errors">' # open phError paragraph
@@ -250,16 +267,16 @@ class PickTicket(models.Model):
                     if not pdItem.check_fields():
                         pdErrors+=1
             if phErrors>0 or pdErrors >0:
-                reportHtml+='<li><span class="pkt-error-text">Parse errors for File: "'+query+'"</span>'
+                reportHtml+='<li><span class="pkt-param-text">Parse errors for File: "'+query+'"</span>'
                 reportHtml+='<ul class="parse-errors">'
             for phItem in phItems:
                 if not phItem.check_fields():
                     totalErrors+=1
-                    reportHtml+='<li class="pkt-text">PH error for order#: '+phItem.PH1_CUST_PO_NBR # write out the PH errors
+                    reportHtml+='<li class="pkt-param-text">PH error for order#: '+phItem.PH1_CUST_PO_NBR # write out the PH errors
                     reportHtml+='<ul class="parse-errors">'
-                    for errorItem in phItem.check_line().split(r'&'):
-                        reportHtml+='<li class="pkt-text">'+errorItem+'</li>'
+                    reportHtml+='<li class="pkt-text">'+phItem.check_line()+'</li>'
                     reportHtml+='</ul>' # close the ph error item list
+                pdItems=PD.objects.filter(ups_ph=phItem.id)
                 pdErrorItems=[]
                 for pdItem in pdItems:
                     if not pdItem.check_fields():
@@ -268,7 +285,7 @@ class PickTicket(models.Model):
                     reportHtml+='<ul class="parse-errors">' # open the phError PD list
                 for pdItem in pdErrorItems:
                     totalErrors+=1
-                    reportHtml+='<li class="pkt-text">'+pdItem.check_line()+' File line #: '+str(pdItem.coQueryRow.queryRecordNumber)+')</li>'
+                    reportHtml+='<li class="pkt-text">'+pdItem.check_line()+' (File line #: '+str(pdItem.coQueryRow.queryRecordNumber)+')</li>'
                 if len(pdErrorItems)>0:
                     reportHtml+='</ul>' # close the pdItems list
                 if not phItem.check_fields():
@@ -291,10 +308,7 @@ class PickTicket(models.Model):
             reportHtml+='<ul class="ph-items">' # open customer main list
             reportHtml+=self.format_pkt_report_html_field(phItem,'SHIPTO_NAME') # open main customer list item
             reportHtml+='<ul class="ph-items">' # open first list within customer
-            if not phItem.check_fields():
-                reportHtml+='<li class="pkt-error-text" >File: "'+phItem.coHeader.query+'"</li>'
-            else:
-                reportHtml+='<li class="pkt-text">File "'+phItem.coHeader.query+'"</li>'
+            reportHtml+='<li class="pkt-param-text" >File: "'+phItem.coHeader.query+'"</li>'
             reportHtml+=self.format_pkt_report_html_field(phItem,'PH1_ORD_DATE')
             reportHtml+=self.format_pkt_report_html_field(phItem,'PH1_CUST_PO_NBR')
             reportHtml+='<li><span class="pkt-text">Address:</span>' # open customer address list item, end span phSub1
@@ -318,10 +332,7 @@ class PickTicket(models.Model):
             reportHtml+='<li><span class="pkt-text">Items:</span>' # open customer items list
             reportHtml+='<ul class="ph-items">' # open list within customer items
             for pdItem in PD.objects.filter(ups_ph=phItem.id):
-                if not pdItem.check_fields():
-                    reportHtml+='<li><span class="pkt-error-text"> file line #: '+str(pdItem.coQueryRow.queryRecordNumber)+'</span>'
-                else:
-                    reportHtml+='<li><span class="pkt-text"> file line #: '+str(pdItem.coQueryRow.queryRecordNumber)+'</span>'
+                reportHtml+='<li><span class="pkt-text"> file line #: '+str(pdItem.coQueryRow.queryRecordNumber)+'</span>'
                 reportHtml+='<ul class="ph-items">' # start list of PD info parsed from this file line
                 reportHtml+=self.format_pkt_report_html_field(pdItem,'PKT_SEQ_NBR')
                 reportHtml+=self.format_pkt_report_html_field(pdItem,'ORIG_ORD_QTY')
@@ -345,10 +356,7 @@ class PickTicket(models.Model):
             reportHtml+='<ul class="ph-items">' # open customer main list
             reportHtml+='<li><span class="pkt-text">Customer:</span> '+phItem.SHIPTO_NAME+'' # open main customer list item
             reportHtml+='<ul class="ph-items">' # open first list within customer
-            if not phItem.check_fields():
-                reportHtml+='<li class="pkt-error-text">File: "'+phItem.coHeader.query+'"</li>'
-            else:
-                reportHtml+='<li class="pkt-text">File: "'+phItem.coHeader.query+'"</li>'
+            reportHtml+='<li class="pkt-param-text">File: "'+phItem.coHeader.query+'"</li>'
             reportHtml+='<li class="pkt-text">Order Date: '+phItem.PH1_ORD_DATE.strftime('%m/%d/%y %H:%M:%S')+'</li>'
             reportHtml+='<li class="pkt-text">Order #: '+phItem.PH1_CUST_PO_NBR+'</li>'
             reportHtml+='<li class="pkt-text">Address:' # open customer address list item, end span phSub1
@@ -703,7 +711,7 @@ class PH(models.Model):
     PHI_REC_TYPE=models.CharField(max_length=3,default='PHI')                   # 3 char
     PHI_SPL_INSTR_NBR=models.CharField(max_length=3,default='')                  # 3 char
     PHI_SPL_INSTR_TYPE=models.CharField(max_length=2,default='')                 # 2 char
-    PHI_SPL_INSTR_CODE=models.CommaSeparatedIntegerField(max_length=11,default='08')# 2 char list from: (01=shipment,02=delivery,04=exception,08=delivery failure)
+    PHI_SPL_INSTR_CODE=models.CommaSeparatedIntegerField(max_length=11,default='')# 2 char list from: (01=shipment,02=delivery,04=exception,08=delivery failure)
     PHI_SPL_INSTR_DESC=models.CharField(max_length=135,default='', blank=True)               # 135 char
     PHI_PKT_PROFILE_ID=models.CharField(max_length=10,default='', blank=True)                # 10 char
 
@@ -802,8 +810,17 @@ class PH(models.Model):
                 errorLine+='"Special Instruction Type" missing, '
             if self.PHI_SPL_INSTR_CODE == '':
                 errorLine+='"Special Instruction Code" missing, '
-            errorLine+='&'
         return(errorLine)
+    
+    def check_fields(self):
+        """
+        check to see if any required fields are empty
+        """
+        try:
+            self.full_clean()
+        except ValidationError:
+            return False
+        return True
     
     def required_fields(self):
         """
@@ -821,43 +838,6 @@ class PH(models.Model):
                     # if not ignore it
                     pass
         return fieldList
-    
-    def check_fields(self):
-        """
-        check to see if any required fields are empty
-        """
-        for field in self.required_fields():
-            try:
-                # check to see if this field has a value, if so check that value
-                if not self.check_field_attr(field.name,getattr(self,field.name)):
-                    return False
-            except:
-                # if not ignore it
-                pass
-        return True
-    
-    def check_field_attr(self,fieldName,fieldAttr):
-        """
-        check to see if a particular required field is empty
-        """
-        fieldVal=''
-        if fieldName == 'PHI_SPL_INSTR_CODE':
-            code=''
-            for code in fieldAttr.split(r','):
-                fieldVal+=code
-            return len(fieldVal)>0
-        if isinstance(fieldVal,datetime.datetime):
-            fieldVal=fieldAttr.strftime('%m/%d/%y %H:%M:%S')
-        else:
-            fieldVal=fieldAttr
-        if len(fieldVal) == 0:
-            # the attribute hasn't been set
-            return False
-        else:
-            # the attribute has been set
-            return True
-        # if we got here, something went wrong, just return false
-        return False
     
     def ph_item(self):
         phItem=''
@@ -964,8 +944,18 @@ class PD(models.Model):
                 errorLine+='"Quantity" missing, '
             if self.PKT_SEQ_NBR == '':
                 errorLine+='"Pickticket Sequence Number" missing, '
-            errorLine+='&'
         return(errorLine)
+    
+    def check_fields(self):
+        """
+        check to see if any required fields are empty
+        """
+        try:
+            self.full_clean()
+        except ValidationError:
+            return False
+        return True
+    
     def required_fields(self):
         """
         return required fields
@@ -982,34 +972,6 @@ class PD(models.Model):
                     # if not ignore it
                     pass
         return fieldList
-    
-    def check_fields(self):
-        """
-        check to see if any required fields are empty
-        """
-        for field in self.required_fields():
-            try:
-                # check to see if this field has a value, if so check that value
-                if not self.check_field_attr(field.name,getattr(self,field.name)):
-                    return False
-            except:
-                # if not ignore it
-                pass
-        return True
-    
-    def check_field_attr(self,fieldName,fieldAttr):
-        """
-        check to see if a particular required field is empty
-        """
-        if len(fieldAttr) == 0:
-            # the attribute hasn't been set
-            return False
-        else:
-            # the attribute has been set
-            return True
-        # if we got here, something went wrong, just return false
-        return False
-
 
 class ShipmentOrderReport(models.Model):
     '''

@@ -41,6 +41,13 @@ def pick_ticket_edit(request, pk):
         "ups_pkt":ups_pkt, "formset": formset,
     })
 
+def pick_ticket_file_report(request, pk):
+    try:
+        ups_pkt=PickTicket.objects.get(pk=pk)
+    except ObjectDoesNotExist:
+        return render(request,'ups/pick_ticket_file_report.html', {'error_message':'PickTicket '+str(pk)+' doesn''t exist'})
+    return render(request,'ups/pick_ticket_file_report.html', {'ups_pkt':ups_pkt})
+
 def pick_ticket_report(request, pk):
     try:
         ups_pkt=PickTicket.objects.get(pk=pk)
