@@ -1,12 +1,5 @@
-{% extends "base/blank.html" %}
-{% load staticfiles %}
-{% block content %}
-    {% if error_message %}
-       <p class="pkt-warning">{{ error_message }}</p>
-    {% endif %}
-    {% if ups_pkt %}
-        <div id="pkt-report">
-            {{ ups_pkt.parse_html_pkt_report|safe }}
-        </div>
-    {% endif %}
-{% endblock content %}
+{% if ups_pkt %}
+    <div id="pkt-report">
+        {{ ups_pkt.parse_html_pkt_report|safe }}
+    </div>
+{% endif %}

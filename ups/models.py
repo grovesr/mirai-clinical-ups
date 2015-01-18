@@ -80,7 +80,7 @@ def mirai_initialize_ups_pkt(files,inputType):
     fileTimeStamp=timezone.datetime.fromtimestamp(timeStamp).strftime('%y%m%d%H%M%S')
     rand='{:010}'.format(random.randrange(1,999999999,1))
     div='001'
-    fileName=warehouse+company+div+'_FF_PICKTICKET_'+rand+'_'+fileTimeStamp
+    fileName=warehouse+company+div+'_FF_PICKTICKET_'+rand+'_'+fileTimeStamp+".txt"
     ups_pkt=PickTicket()
     ups_pkt.DOC_DATE=timezone.now()
     ups_pkt.warehouse=warehouse
@@ -130,6 +130,7 @@ def mirai_initialize_ups_pkt(files,inputType):
         return result
     pktStr=ups_pkt.create_pick_ticket_string()
     ups_pkt.fileContents=pktStr
+    ups_pkt.fileLineSep=os.linesep
     if result < 0:
         return result
     ups_pkt.save()
@@ -154,7 +155,7 @@ class PickTicket(models.Model):
     # TRL section
     TRL_REC_TYPE=models.CharField(max_length=3, default='TRL')              # 3 char
     #
-    fileName=models.URLField(default='')
+    fileName=models.CharField(max_length=55,default='')
     fileContents=models.TextField(default='')
     fileLineSep=models.CharField(max_length=5,default=os.linesep)
     
@@ -250,7 +251,7 @@ class PickTicket(models.Model):
         reportHtml=''
         reportHtml+='<p><ul class="parse-errors">' # open phError paragraph
         # we have recorded the errors, now let's output the error report for each file
-        headerIds=PH.objects.filter(ups_pkt=self.id).values('coHeader').distinct()
+        headerIds=self.ph_set.all().values('coHeader').distinct()
         totalErrors=0
         for headerId in headerIds:
             phErrors=0
@@ -258,11 +259,11 @@ class PickTicket(models.Model):
             header=CustOrderHeader.objects.get(pk=headerId['coHeader'])
             query=header.query
             # PH items associated with this query file
-            phItems=PH.objects.filter(ups_pkt=self.id).filter(coHeader=headerId['coHeader'])
+            phItems=self.ph_set.all().filter(coHeader=headerId['coHeader'])
             for phItem in phItems:
                 if not phItem.check_fields():
                     phErrors+=1
-                pdItems=PD.objects.filter(ups_ph=phItem.id)
+                pdItems=phItem.pd_set.all()
                 for pdItem in pdItems:
                     if not pdItem.check_fields():
                         pdErrors+=1
@@ -276,7 +277,7 @@ class PickTicket(models.Model):
                     reportHtml+='<ul class="parse-errors">'
                     reportHtml+='<li class="pkt-text">'+phItem.check_line()+'</li>'
                     reportHtml+='</ul>' # close the ph error item list
-                pdItems=PD.objects.filter(ups_ph=phItem.id)
+                pdItems=phItem.pd_set.all()
                 pdErrorItems=[]
                 for pdItem in pdItems:
                     if not pdItem.check_fields():
@@ -301,7 +302,7 @@ class PickTicket(models.Model):
     
     def parse_html_pkt_report(self):
         reportHtml=''
-        phItems=PH.objects.filter(ups_pkt=self.id)
+        phItems=self.ph_set.all()
         reportHtml+='<p>PH Items ('+str(phItems.count())+'):' # open phItems paragraph
         # we have recorded the errors, now let's output the report for each order
         for phItem in phItems:
@@ -331,7 +332,7 @@ class PickTicket(models.Model):
             reportHtml+=self.format_pkt_report_html_field(phItem,'PHI_SPL_INSTR_CODE')
             reportHtml+='<li><span class="pkt-text">Items:</span>' # open customer items list
             reportHtml+='<ul class="ph-items">' # open list within customer items
-            for pdItem in PD.objects.filter(ups_ph=phItem.id):
+            for pdItem in phItem.pd_set.all():
                 reportHtml+='<li><span class="pkt-text"> file line #: '+str(pdItem.coQueryRow.queryRecordNumber)+'</span>'
                 reportHtml+='<ul class="ph-items">' # start list of PD info parsed from this file line
                 reportHtml+=self.format_pkt_report_html_field(pdItem,'PKT_SEQ_NBR')
@@ -349,7 +350,7 @@ class PickTicket(models.Model):
     
     def parse_html_report(self):
         reportHtml=''
-        phItems=PH.objects.filter(ups_pkt=self.id)
+        phItems=self.ph_set.all()
         reportHtml+='<p>PH Items ('+str(phItems.count())+'):' # open phItems paragraph
         # we have recorded the errors, now let's output the report for each order
         for phItem in phItems:
@@ -371,7 +372,7 @@ class PickTicket(models.Model):
             reportHtml+='</li>' # end customer address list item
             reportHtml+='<li>Items:' # open customer items list
             reportHtml+='<ul class="ph-items">' # open list within customer items
-            for pdItem in PD.objects.filter(ups_ph=phItem.id):
+            for pdItem in phItem.pd_set.all():
                 reportHtml+='<li>('+pdItem.ORIG_ORD_QTY+') '+pdItem.SIZE_DESC+' (SKU:'+pdItem.CUST_SKU+', file line #: '+str(pdItem.coQueryRow.queryRecordNumber)+')</li>'
             reportHtml+='</ul>' # end list within customer items
             reportHtml+='</ul>' # close main list within customer
@@ -820,6 +821,12 @@ class PH(models.Model):
             self.full_clean()
         except ValidationError:
             return False
+        return True
+    
+    def check_pd(self):
+        for pdItem in self.pd_set.all():
+            if not pdItem.check_fields():
+                return False
         return True
     
     def required_fields(self):

@@ -2,9 +2,28 @@
 {% load staticfiles %}
 {% block extra_scripts %}
     <script>
+        var selectedTab="#tab1";
         $(document).ready(function(){
-            $("#tab1").focus();
+            $(selectedTab).focus();
+            setActiveTab(selectedTab);
+            $('div').filter(function() {return this.id.match(/tab+/)}).hide();
+            $(selectedTab+"-content").show();
+            $(".tabbed-menu li").filter(function() {return this.id.match(/tab+/)}).click(function() {
+                if (selectedTab.localeCompare("#"+this.id) != 0) {
+                    setInactiveTab(selectedTab);
+                    $(selectedTab+"-content").hide();
+                    selectedTab="#"+this.id;
+                    setActiveTab(selectedTab);
+                    $(selectedTab+"-content").show();
+                }
+            });
         });
+        function setActiveTab(tabId) {
+            $(tabId).css("background-color","darkgrey");
+        }
+        function setInactiveTab(tabId) {
+            $(tabId).css("background-color","lightgrey");
+        }
     </script>
 {% endblock extra_scripts %}
 {% block content %}
@@ -21,15 +40,27 @@
     {% endif %}
     {% if ups_pkt %}
         <ul class="tabbed-menu" id="tabbed-menu1">
-            <li><a id="tab1" href="{% url 'ups:pick_ticket_error_report' ups_pkt.id %}" target="iframe_report">Errors</a></li>
-            <li><a id="tab2" href="{% url 'ups:pick_ticket_report' ups_pkt.id %}" target="iframe_report">Report</a></li>
-            <li><a id="tab3" href="{% url 'ups:pick_ticket_pkt_report' ups_pkt.id %}" target="iframe_report">Pkt Report</a></li>
-            <li><a id="tab3" href="{% url 'ups:pick_ticket_file_report' ups_pkt.id %}" target="iframe_report">Pkt File</a></li>
+            <li id="tab1">Errors</li>
+            <li id="tab2">Report</li>
+            <li id="tab3">Pkt Report</li>
+            <li id="tab4">Pkt File</li>
         </ul>
-        <iframe class="iframe-report" src="{% url 'ups:pick_ticket_error_report' ups_pkt.id %}" name="iframe_report">
-        </iframe>
+        <br/>
+        <div id="tab1-content" class="pkt-report">
+            {% include "ups/pick_ticket_error_report.html" with ups_pkt=ups_pkt %}
+        </div>
+        <div id="tab2-content" class="pkt-report">
+            {% include "ups/pick_ticket_report.html" with ups_pkt=ups_pkt %}
+        </div>
+        <div id="tab3-content" class="pkt-report">
+            {% include "ups/pick_ticket_pkt_report.html" with ups_pkt=ups_pkt %}
+        </div>
+        <div id="tab4-content" class="pkt-report">
+            {% include "ups/pick_ticket_file_report.html" with ups_pkt=ups_pkt %}
+        </div>
+        <br/>
+        <div>
+            <a class="pkt-action-btns" href="{% url 'ups:pick_ticket_edit' ups_pkt.id %}"><button type="button">Edit PickTicket</button></a> 
+        </div>
     {% endif %}
-    <div>
-        <a class="pkt-action-btns" href="{% url 'ups:pick_ticket_edit' ups_pkt.id %}"><button type="button">Edit</button></a> 
-    </div>
 {% endblock content %}

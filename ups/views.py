@@ -1,12 +1,12 @@
-from django.shortcuts import render, render_to_response
+from django.shortcuts import render
 from django.http import HttpResponseRedirect
 from django.core.urlresolvers import reverse
 import datetime
 from django.utils import timezone
 from django.core.exceptions import ObjectDoesNotExist
-from ups.models import mirai_check_args, mirai_initialize_ups_pkt, PickTicket, PH
-from ups.forms import FileNameForm, PickTicketForm
-from django.forms.models import inlineformset_factory
+from ups.models import mirai_check_args, mirai_initialize_ups_pkt, PickTicket, PH, PD
+from ups.forms import FileNameForm, PhForm, PdForm, TitleErrorList
+from django.forms.models import inlineformset_factory, modelform_factory
 
 # Create your views here.
 def index(request):
@@ -22,23 +22,50 @@ def pick_ticket_detail(request, pk):
         return render(request,'ups/pick_ticket_detail.html', {'error_message':'PickTicket '+str(pk)+' doesn''t exist'})
     return render(request,'ups/pick_ticket_detail.html', {'ups_pkt':ups_pkt})
 
+def pick_ticket_edit_ph(request, pk):
+    try:
+        ups_ph=PH.objects.get(pk=pk)
+    except ObjectDoesNotExist:
+        return render(request,'ups/pick_ticket_edit_ph.html', {'error_message':'PickTicket PH '+str(pk)+' doesn''t exist',})
+    phFields=['SHIPTO_NAME','PH1_CUST_PO_NBR',]
+    PdInlineFormset=inlineformset_factory(PH, PD, extra=0, form=PdForm)
+    PhForm=modelform_factory(PH,fields=phFields)
+    #pktForm=PickTicketForm(instance=ups_pkt)
+    if request.method == "POST":
+        phForm=PhForm(request.POST,instance=ups_ph, error_class=TitleErrorList)
+        pdForms=PdInlineFormset(request.POST,instance=ups_ph, error_class=TitleErrorList)
+        if pdForms.is_valid() and phForm.is_valid():
+            #formset.save()
+            # Do something. Should generally end with a redirect. For example:
+            return HttpResponseRedirect(ups_ph.get_absolute_url())
+    else:
+        phForm=PhForm(ups_ph.__dict__,instance=ups_ph, error_class=TitleErrorList)
+        pdForms=PdInlineFormset(instance=ups_ph, error_class=TitleErrorList)
+    return render(request,"ups/pick_ticket_edit_ph.html", {
+        "ups_ph":ups_ph, "phForm":phForm, "pdForms": pdForms,
+    })
+
 def pick_ticket_edit(request, pk):
     try:
         ups_pkt=PickTicket.objects.get(pk=pk)
     except ObjectDoesNotExist:
         return render(request,'ups/pick_ticket_edit.html', {'error_message':'PickTicket '+str(pk)+' doesn''t exist',})
-    PktInlineFormSet = inlineformset_factory(PickTicket, PH)
+    pktFields=['DOC_DATE','fileName']
+    PhInlineFormset=inlineformset_factory(PickTicket,PH,extra=0, form=PhForm)
+    PickTicketForm=modelform_factory(PickTicket,fields=pktFields)
     #pktForm=PickTicketForm(instance=ups_pkt)
     if request.method == "POST":
-        formset = PktInlineFormSet(request.POST, request.FILES, instance=ups_pkt)
-        if formset.is_valid():
-            formset.save()
+        pktForm=PickTicketForm(request.POST,instance=ups_pkt, error_class=TitleErrorList)
+        phForms=PhInlineFormset(request.POST,instance=ups_pkt, error_class=TitleErrorList)
+        if phForms.is_valid() and pktForm.is_valid():
+            #formset.save()
             # Do something. Should generally end with a redirect. For example:
             return HttpResponseRedirect(ups_pkt.get_absolute_url())
     else:
-        formset = PktInlineFormSet(instance=ups_pkt)
-    return render_to_response("ups/pick_ticket_edit.html", {
-        "ups_pkt":ups_pkt, "formset": formset,
+        pktForm=PickTicketForm(ups_pkt.__dict__,instance=ups_pkt, error_class=TitleErrorList)
+        phForms=PhInlineFormset(instance=ups_pkt, error_class=TitleErrorList)
+    return render(request,"ups/pick_ticket_edit.html", {
+        "ups_pkt":ups_pkt, "pktForm":pktForm, "phForms": phForms,
     })
 
 def pick_ticket_file_report(request, pk):

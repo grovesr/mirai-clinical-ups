@@ -2,11 +2,15 @@
     font-weight: bold;
 }
 
-.pkt-error-text {
+.pkt-error-text, .pkt-error-text input {
     color: red;
 }
 
-.pkt-param-text, .pkt-error-text {
+td.pkt-error-text {
+    border: 2px solid red;
+}
+
+.pkt-param-text, .pkt-error-text, .pkt-param-text input, .pkt-error-text input {
     font-weight: bold;
 }
 
@@ -38,7 +42,7 @@ ul.tabbed-menu li, ul.sidebar li {
     display: inline;
 }
 
-ul.tabbed-menu a {
+ul.tabbed-menu li {
     float: left;
     margin-right: 1%;
     background-color: lightgrey;
@@ -46,19 +50,15 @@ ul.tabbed-menu a {
     padding: 10px 20px 0px;
     text-decoration: none;
     border-radius: 15px 15px 0 0;
-    border: solid lightgrey;
-    border-bottom-style: none;
+    border-style: none;
 }
 
-ul.tabbed-menu a:hover {
+ul.tabbed-menu li:hover {
     background-color:darkgrey;
-    border: solid darkgrey;
-    border-bottom-style: none;
 }
 
-ul.tabbed-menu a:focus {
-    border: solid grey;
-    border-bottom-style: none;
+ul.tabbed-menu li:focus{
+    background-color:darkgrey;
 }
 
 #site-name {
@@ -81,11 +81,43 @@ ul.tabbed-menu a:focus {
     width: 1000px;
 }
 
-.iframe-report {
-     width: 1000px;
+.pkt-report {
+    clear: both;
+    border: 1px solid darkgrey;
+    width: 1000px;
     height: 300px;
+    resize: both;
+    overflow: auto;
 }
 
 a.pkt-action-btns {
     text-decoration: none;
 }
+
+.pick-ticket-edit-form {
+    width: 1000px;
+    height: 400px;
+    resize: both;
+    overflow: scroll;
+}
+
+
+tr.row1 td, tr.row1 input {
+    background-color: lightgrey;
+}
+
+tr.row2 td, tr.row2 input {
+    background-color: white;
+}
+
+ul.errorlist {
+    list-style-type: none;
+    margin-top: 0px;
+    margin-bottom: 0px;
+}
+
+ul.errorlist li {
+    display: inline;
+    color: red;
+}
+

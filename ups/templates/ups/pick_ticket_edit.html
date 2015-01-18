@@ -1,20 +1,45 @@
 {% extends "base/base.html" %}
 {% load staticfiles %}
 {% block content %}
-     <div class="pkt-info">
-        <p>
-        <span class="pkt-report-header">PickTicket:</span><br/>
-        id = {{ ups_pkt.id }}<br/>
-        fileName = {{ ups_pkt.fileName }}<br/>
-        DOC_DATE = {{ ups_pkt.DOC_DATE }}
-        </p>
-    </div>
     {% if error_message %}
         <p class="pkt-warning">{{ error_message }}</p>
     {% else %}
-        <form action="{% url 'ups:pick_ticket_edit' ups_pkt.id %}" method="post">
-            {% csrf_token %}
-            {{ formset }}
-        </form>
+        <div class="pick-ticket-edit-form">
+            <form action="{% url 'ups:pick_ticket_edit' ups_pkt.id %}" method="post">
+                <input type="submit" value="Validate" class="pkt-button"><br/>
+                {% csrf_token %}
+                <table class="pkt-edit-form">
+                    {{ pktForm }}
+                </table>
+                <table class="pkt-edit-form">
+                {{ phForms.management_form }}
+                {% for phForm in phForms %}
+                    {% if forloop.first %}
+                        <thead><tr>
+                            <th>PD Valid</th>
+                            {% for field in phForm.visible_fields %}
+                                <th>{{ field.label|capfirst }}</th>
+                            {% endfor %}
+                        </tr></thead>
+                    {% endif %}
+                    <tr class="{% cycle row1,row2 %}">
+                        <td><a href="{% url 'ups:pick_ticket_edit_ph' phForm.instance.id %}">{{ phForm.instance.check_pd }}</a></td> 
+                        {% for field in phForm.visible_fields %}
+                            <td class="{{ field.css_classes }}" title="{{ field.errors | escape}}">
+                                {# Include the hidden fields in the form #}
+                                {% if forloop.first %}
+                                    {% for hidden in phForm.hidden_fields %}
+                                        {{ hidden }}
+                                    {% endfor %}
+                                {% endif %}
+                                {# {{ field.errors }} #}
+                                {{ field }}
+                            </td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+                </table>
+            </form>
+        </div>
     {% endif %}
 {% endblock content %}
