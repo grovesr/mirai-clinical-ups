@@ -1,4 +1,4 @@
-{% extends "base/base.html" %}
+{% extends "ups/ups_home.html" %}
 {% load staticfiles %}
 {% block extra_scripts %}
     <script>
@@ -17,6 +17,9 @@
                     $(selectedTab+"-content").show();
                 }
             });
+            $("#printButton").click(function(){
+                printElem(selectedTab+"-content");
+            });
         });
         function setActiveTab(tabId) {
             $(tabId).css("background-color","darkgrey");
@@ -24,15 +27,35 @@
         function setInactiveTab(tabId) {
             $(tabId).css("background-color","lightgrey");
         }
+        function printElem(elem) {
+            popup($(elem).html());
+        }
+
+        function popup(data) {
+            var mywindow = window.open('', 'my div', 'height=300px,width=1000px');
+            mywindow.document.write('<html><head>');
+            mywindow.document.write('<link rel="stylesheet" href="{% static 'ups/style/style.css' %}" type="text/css" />');
+            mywindow.document.write('</head><body >');
+            mywindow.document.write(data);
+            mywindow.document.write('</body></html>');
+            mywindow.document.close(); // necessary for IE >= 10
+            mywindow.focus(); // necessary for IE >= 10
+            mywindow.print();
+            mywindow.close();
+            return true;
+        }
+
     </script>
 {% endblock extra_scripts %}
 {% block content %}
+    <div class="breadcrumb">
+        <a href= "{% url 'ups:pick_ticket_detail' ups_pkt.id %}">Report</a>
+    </div>
      <div class="pkt-info">
         <p>
-        <span class="pkt-report-header">PickTicket:</span><br/>
-        id = {{ ups_pkt.id }}<br/>
-        fileName = {{ ups_pkt.fileName }}<br/>
-        DOC_DATE = {{ ups_pkt.DOC_DATE }}
+            <span class="pkt-report-header">PickTicket:</span><br/>
+            FileName: {{ ups_pkt.fileName }}<br/>
+            Date: {{ ups_pkt.DOC_DATE }}<br/></br>
         </p>
     </div>
     {% if error_message %}
@@ -45,22 +68,27 @@
             <li id="tab3">Pkt Report</li>
             <li id="tab4">Pkt File</li>
         </ul>
-        <br/>
-        <div id="tab1-content" class="pkt-report">
-            {% include "ups/pick_ticket_error_report.html" with ups_pkt=ups_pkt %}
+        <div class="pkt-report">
+            <button class="pkt-action-btns" id="printButton">Print</button>
+            <div id="tab1-content">
+                {% include "ups/pick_ticket_error_report.html" with ups_pkt=ups_pkt %}
+            </div>
+            <div id="tab2-content">
+                {% include "ups/pick_ticket_report.html" with ups_pkt=ups_pkt %}
+            </div>
+            <div id="tab3-content">
+                {% include "ups/pick_ticket_pkt_report.html" with ups_pkt=ups_pkt %}
+            </div>
+            <div id="tab4-content">
+                {% include "ups/pick_ticket_file_report.html" with ups_pkt=ups_pkt %}
+            </div>
         </div>
-        <div id="tab2-content" class="pkt-report">
-            {% include "ups/pick_ticket_report.html" with ups_pkt=ups_pkt %}
-        </div>
-        <div id="tab3-content" class="pkt-report">
-            {% include "ups/pick_ticket_pkt_report.html" with ups_pkt=ups_pkt %}
-        </div>
-        <div id="tab4-content" class="pkt-report">
-            {% include "ups/pick_ticket_file_report.html" with ups_pkt=ups_pkt %}
-        </div>
-        <br/>
         <div>
-            <a class="pkt-action-btns" href="{% url 'ups:pick_ticket_edit' ups_pkt.id %}"><button type="button">Edit PickTicket</button></a> 
+            <a class="pkt-action-btns" href="{% url 'ups:pick_ticket_edit' ups_pkt.id %}"><button type="button">Edit</button></a>
+            <form action="{% url 'ups:pick_ticket_detail' ups_pkt.id %}" method="post"> 
+                {% csrf_token %}
+                <input type="submit" value="Delete" class="pkt-action-btns" name="Delete">
+            </form>
         </div>
     {% endif %}
 {% endblock content %}

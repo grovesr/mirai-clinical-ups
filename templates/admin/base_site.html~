@@ -1,18 +1,8 @@
 {% extends "admin/base.html" %}
-
+{% load staticfiles %}
 {% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
 
 {% block branding %}
-<h1 id="site-name"><a href="{% url 'admin:index' %}">MiraiDebug administration</a></h1>
-{% endblock %}
-<div id="sidebar">
-    {% block sidebar %}
-        <ul class="sidebar" id="sidebar-main">
-            <li><a href="/">Home</a></li>
-            <li><a href="/ups/pick_ticket_index">PickTickets</a></li>
-            <li><a href="/ups/file_selection">UPS File Selection</a></li>
-            <li><a href="/admin">Admin</a></li>
-        </ul>
-    {% endblock sidebar %}
-</div>
-{% block nav-global %}{% endblock %}
+    <img src="{% static 'base/img/logo.gif' %}" width="300px"/>
+{% endblock branding%}
+{% block nav-global %}{% include "base/nav_global.html" with admin=1 %}{% endblock %}

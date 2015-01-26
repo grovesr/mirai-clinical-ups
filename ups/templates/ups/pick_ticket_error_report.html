@@ -1,5 +1,11 @@
 {% if ups_pkt %}
-    <div id="pkt-error-report">
+    <div 
+        {% if ups_pkt.num_errors > 0 %}
+            class="pkt-error-text"    
+        {% else %}
+            class="pkt-ok"
+        {% endif %}
+    >
         {{ ups_pkt.parse_html_error_report|safe }}
     </div>
 {% endif %}

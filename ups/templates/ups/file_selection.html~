@@ -3,25 +3,6 @@
 {% block extra_scripts %}
     <script src="https://www.dropbox.com/static/api/2/dropins.js" id="dropboxjs" data-app-key="m76qecnh6atbi8f" ></script>
     <script src="{% static 'ups/js/chooser.js' %}"></script>
-    <style>
-        .dropbox-dropin-btn, .pkt-button, .pkt-button:hover .dropbox-dropin-btn:link, .dropbox-dropin-btn:hover {
-            display: inline-block;
-            height: 22px;
-            font-family: "Lucida Grande", "Segoe UI", "Tahoma", "Helvetica Neue", "Helvetica", sans-serif;
-            font-size: 15px;
-            font-weight: 600;
-            color: #636363;
-            text-decoration: none;
-            padding: 4px 7px 1px 3px;
-            border: 1px solid #ebebeb;
-            border-radius: 6px;
-            border-bottom-color: #d4d4d4;
-            background: #fcfcfc;
-            background: -moz-linear-gradient(top, #fcfcfc 0%, #f5f5f5 100%);
-            background: -webkit-linear-gradient(top, #fcfcfc 0%, #f5f5f5 100%);
-            background: linear-gradient(to bottom, #fcfcfc 0%, #f5f5f5 100%);
-        }
-    </style>
 {% endblock extra_scripts %}
 {% block content %}
 {% if error_message %}<p><strong>{{ error_message }}</strong></p>{% endif %}
@@ -32,7 +13,7 @@
             {# returned filenames go here #}
             <ul id="file_list">
             </ul>
-        <form action="{% url 'ups:file_selection' %}" method="post">
+        <form action="{% url 'ups:pick_ticket_index' %}" method="post">
             {% csrf_token %}
             {{ form }}
         </form>

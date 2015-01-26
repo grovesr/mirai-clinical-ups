@@ -1,4 +1,3 @@
-{#{% extends "base/blank.html" %}#}
 {% load staticfiles %}
 <!DOCTYPE html>
 <html lang="en">
@@ -10,14 +9,10 @@
 </head>
 
 <body>
-    {% block branding %}<h1 id="site-name" >MiraiDebug</h1>{% endblock branding %}
-    {% block sidebar %}
-    <ul class="sidebar" id="sidebar-main">
-        <li><a href="/">Home</a></li>
-        <li><a href="/ups/pick_ticket_index">PickTickets</a></li>
-        <li><a href="/ups/file_selection">UPS File Selection</a></li>
-    </ul>
-    {% endblock sidebar %}
+    {% block branding %}<img src="{% static 'base/img/logo.gif' %}" width="300px"/>{% endblock branding %}
+    {% block nav-global %}
+        {% include "base/nav_global.html" %}
+    {% endblock nav-global %}
     {% block content %}{% endblock %}
 </body>
 </html>

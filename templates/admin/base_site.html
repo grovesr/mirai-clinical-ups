@@ -1,8 +1,12 @@
 {% extends "admin/base.html" %}
-
-{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+{% load staticfiles %}
+{% block extrastyle %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'ups/style/style.css' %}">
+{% endblock extrastyle %}
+{% block title %}{{ title }} | {{ site_title|default:_('MiraiDebug site admin') }}{% endblock %}
 
 {% block branding %}
-<h1 id="site-name"><a href="{% url 'admin:index' %}">MiraiDebug administration</a></h1>
-{% endblock %}
-{% block nav-global %}{% endblock %}
+    <img src="{% static 'base/img/logo.gif' %}" width="300px"/>
+{% endblock branding%}
+{% block nav-global %}{% include "base/nav_global.html" with admin=1 %}{% endblock %}

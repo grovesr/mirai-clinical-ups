@@ -236,6 +236,38 @@ class PickTicket(models.Model):
             phItem.save()
         return 0
     
+    def num_ph_errors(self):
+        """"
+        Count the number of PH items with errors
+        """
+        count=0
+        for phItem in self.ph_set.all():
+            if not phItem.check_fields() or not phItem.check_pd():
+                count+=1
+        return count
+    
+    def num_errors(self):
+        """"
+        Count the number of errors, including self
+        """
+        count=0
+        if not self.check_fields():
+            count+=1
+        for phItem in self.ph_set.all():
+            if not phItem.check_fields() or not phItem.check_pd():
+                count+=1
+        return count
+    
+    def check_fields(self):
+        """
+        check to see if any required fields are empty
+        """
+        try:
+            self.full_clean()
+        except ValidationError:
+            return False
+        return True
+    
     def create_pick_ticket_string(self):
         pktStr=''
         pktStr+=self.hdr()+os.linesep
@@ -720,7 +752,7 @@ class PH(models.Model):
 
     
     def __unicode__(self):
-        return 'PH instance ['+self.PKT_CTRL_NBR+']'
+        return 'PH instance ['+self.PH1_CUST_PO_NBR+']'
     
     def parse(self,coLine):
         try:
@@ -823,7 +855,20 @@ class PH(models.Model):
             return False
         return True
     
+    def num_pd_errors(self):
+        """"
+        Count the number of PD items with errors
+        """
+        count=0
+        for pdItem in self.pd_set.all():
+            if not pdItem.check_fields():
+                count+=1
+        return count
+    
     def check_pd(self):
+        """
+        Check to see if any PD items have errors
+        """
         for pdItem in self.pd_set.all():
             if not pdItem.check_fields():
                 return False

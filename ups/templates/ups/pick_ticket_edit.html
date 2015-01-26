@@ -1,29 +1,62 @@
-{% extends "base/base.html" %}
+{% extends "ups/ups_home.html" %}
 {% load staticfiles %}
 {% block content %}
+    <div class="breadcrumb">
+        <a href= "{% url 'ups:pick_ticket_detail' ups_pkt.id %}">Report</a>
+        <a href= "{% url 'ups:pick_ticket_edit' ups_pkt.id %}">>>PickTicket</a>
+    </div>
     {% if error_message %}
         <p class="pkt-warning">{{ error_message }}</p>
     {% else %}
-        <div class="pick-ticket-edit-form">
-            <form action="{% url 'ups:pick_ticket_edit' ups_pkt.id %}" method="post">
-                <input type="submit" value="Validate" class="pkt-button"><br/>
-                {% csrf_token %}
+        {# cycle template tag from future is auto-escaping #}
+        {% load cycle from future %}
+        <form action="{% url 'ups:pick_ticket_edit' ups_pkt.id %}" method="post">
+            <p>
+                <span class="pkt-report-header">PickTicket ({{ ups_pkt.id }}):</span>
+                <span 
+                    {% if ups_pkt.num_errors > 0 %}
+                        class="pkt-error-text"    
+                    {% else %}
+                        class="pkt-ok"
+                    {% endif %}
+                > {{ warning_message }}</span><br/>
                 <table class="pkt-edit-form">
                     {{ pktForm }}
                 </table>
+            </p>
+            <input type="submit" value="Delete" class="pkt-button" name="Delete">
+            <p class="pkt-report-header">Num Orders (PH): {{ ups_pkt.ph_set.all.count }}<br/>
+            Orders With Errors: {{ ups_pkt.num_ph_errors }}<br/>
+            </p>
+            <div class="pick-ticket-edit-form">
+                {% csrf_token %}
                 <table class="pkt-edit-form">
                 {{ phForms.management_form }}
                 {% for phForm in phForms %}
                     {% if forloop.first %}
-                        <thead><tr>
-                            <th>PD Valid</th>
+                        <thead><tr class="pick-ticket-edit-header">
+                            <th>Order Items Status</th>
+                            <th>No. Order Items</th>
                             {% for field in phForm.visible_fields %}
                                 <th>{{ field.label|capfirst }}</th>
                             {% endfor %}
                         </tr></thead>
                     {% endif %}
                     <tr class="{% cycle row1,row2 %}">
-                        <td><a href="{% url 'ups:pick_ticket_edit_ph' phForm.instance.id %}">{{ phForm.instance.check_pd }}</a></td> 
+                        <td class={% if phForm.instance.check_pd %}
+                            "pkt-text"
+                        {% else %}
+                            "pkt-error-text"
+                        {% endif %}
+                        ><a class="pkt-link" href="{% url 'ups:pick_ticket_edit_ph' phForm.instance.id %}"
+                         title="{% if phForm.instance.check_pd %}edit order items{% else %}edit order items, some have errors{% endif %}">
+                        {% if phForm.instance.check_pd %}
+                            OK
+                        {% else %}
+                            Errors
+                        {% endif %}
+                        </a></td>
+                        <td>{{ phForm.instance.pd_set.all.count }}</td> 
                         {% for field in phForm.visible_fields %}
                             <td class="{{ field.css_classes }}" title="{{ field.errors | escape}}">
                                 {# Include the hidden fields in the form #}
@@ -39,7 +72,8 @@
                     </tr>
                 {% endfor %}
                 </table>
-            </form>
-        </div>
+            </div>
+            <input type="submit" value="Save" class="pkt-button" name="Save">
+        </form>
     {% endif %}
 {% endblock content %}

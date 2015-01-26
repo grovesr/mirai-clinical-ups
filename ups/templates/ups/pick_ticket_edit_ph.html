@@ -1,0 +1,63 @@
+{% extends "ups/ups_home.html" %}
+{% load staticfiles %}
+{% block content %}
+    <div class="breadcrumb">
+        <a href= "{% url 'ups:pick_ticket_detail' ups_ph.ups_pkt.id %}">Report</a>
+        <a href= "{% url 'ups:pick_ticket_edit' ups_ph.ups_pkt.id %}">>>PickTicket</a>
+        <a href= "{% url 'ups:pick_ticket_edit_ph' ups_ph.id %}">>>Order</a>
+    </div>
+    {% if error_message %}
+        <p class="pkt-warning">{{ error_message }}</p>
+    {% else %}
+        {# cycle template tag from future is auto-escaping #}
+        {% load cycle from future %}
+        <p>
+            <span class="pkt-report-header">PickTicket ({{ ups_ph.ups_pkt.id }}):</span><br/>
+            <span class="pkt-report-header">Order ({{ ups_ph.id }}):</span>
+            <span
+                {% if ups_pkt.num_errors > 0 %}
+                    class="pkt-error-text"    
+                {% else %}
+                    class="pkt-ok"
+                {% endif %}
+            > {{ warning_message }}</span><br/>
+            SHIPTO_NAME: {{ ups_ph.SHIPTO_NAME }}<br/>
+            PH1_CUST_PO_NBR: {{ ups_ph.PH1_CUST_PO_NBR }}<br/></br
+        </p>
+        <p class="pkt-report-header">Num Order Items (PD): {{ ups_ph.pd_set.all.count }}<br/>
+        Order Items With Errors: {{ ups_ph.num_pd_errors }}<br/>
+        </p>
+        <form action="{% url 'ups:pick_ticket_edit_ph' ups_ph.id %}" method="post">
+            <div class="pick-ticket-edit-form">
+                {% csrf_token %}
+                <table class="pkt-edit-form">
+                {{ pdForms.management_form }}
+                {% for pdForm in pdForms %}
+                    {% if forloop.first %}
+                        <thead><tr class="pick-ticket-edit-header">
+                            {% for field in pdForm.visible_fields %}
+                                <th>{{ field.label|capfirst }}</th>
+                            {% endfor %}
+                        </tr></thead>
+                    {% endif %}
+                    <tr class="{% cycle row1,row2 %}">
+                        {% for field in pdForm.visible_fields %}
+                            <td class="{{ field.css_classes }}" title="{{ field.errors | escape}}">
+                                {# Include the hidden fields in the form #}
+                                {% if forloop.first %}
+                                    {% for hidden in pdForm.hidden_fields %}
+                                        {{ hidden }}
+                                    {% endfor %}
+                                {% endif %}
+                                {# {{ field.errors }} #}
+                                {{ field }}
+                            </td>
+                        {% endfor %}
+                    </tr>
+                {% endfor %}
+                </table>
+            </div> 
+            <input type="submit" value="Save" class="pkt-button"><br/>   
+        </form>
+    {% endif %}
+{% endblock content %}

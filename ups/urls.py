@@ -3,9 +3,9 @@ from django.conf.urls import patterns, url
 from ups import views
 
 urlpatterns = patterns('',
-     # ex: /ups/
-    url(r'^$', views.index, name='index'),
-    url(r'^file_selection$', views.file_selection, name='file_selection'),
+    # ex: /ups/
+    url(r'^$', views.ups_home, name='ups_home'),
+    url(r'^pick_ticket_detail/(?P<pk>\d+)$', views.pick_ticket_detail, name='pick_ticket_detail'),
     url(r'^pick_ticket_detail/(?P<pk>\d+)$', views.pick_ticket_detail, name='pick_ticket_detail'),
     url(r'^pick_ticket_edit/(?P<pk>\d+)$', views.pick_ticket_edit, name='pick_ticket_edit'),
     url(r'^pick_ticket_edit_ph/(?P<pk>\d+)$', views.pick_ticket_edit_ph, name='pick_ticket_edit_ph'),
