@@ -1,12 +1,15 @@
 from django.shortcuts import render
 from django.http import HttpResponseRedirect
 from django.core.urlresolvers import reverse
+from django.conf import settings
+from ssapi import  ss
 import datetime
 from django.utils import timezone
 from django.core.exceptions import ObjectDoesNotExist
-from ups.models import mirai_check_args, mirai_initialize_ups_pkt, PickTicket, PH, PD
-from ups.forms import FileNameForm, PhForm, PdForm, TitleErrorList
+from ups.models import mirai_check_args, mirai_init_ups_pkt_from_file,mirai_init_ups_pkt_from_ssapi, PickTicket, PH, PD
+from ups.forms import FileNameForm, PhForm, PdForm, TitleErrorList, DateSpanQueryForm
 from django.forms.models import inlineformset_factory, modelform_factory
+from django.http.request import HttpRequest
 
 # helper functions
 def bind_formset(formset):
@@ -179,7 +182,7 @@ def pick_ticket_index(request):
                 return render(request, 'ups/pick_ticket_index.html', {
                     'error_message': "Problem with the files.",
                 })
-            upsPktId=mirai_initialize_ups_pkt(files,inputType)
+            upsPktId=mirai_init_ups_pkt_from_file(files,inputType)
             if upsPktId == -1:
                 return render(request, 'ups/pick_ticket_index.html', {
                     'error_message': "Problem with the files.",
@@ -203,3 +206,22 @@ def pick_ticket_index(request):
     if len(pkt_list)==0:
         return render(request,'ups/pick_ticket_index.html', {'error_message':'No PickTickets to display'})
     return render(request,'ups/pick_ticket_index.html', {'pkt_list':pkt_list})
+
+def shipstation_query(request):
+    if request.method=="POST":
+        dateSpanForm=DateSpanQueryForm(request.POST)
+        if dateSpanForm.is_valid():
+            startDate=request.POST.get('startDate')
+            stopDate=request.POST.get('stopDate')
+            startDate=startDate.replace('/','-')
+            stopDate=stopDate.replace('/','-')
+            ssget=ss.get(api_key=settings.SS_API_KEY,api_secret=settings.SS_API_SECRET,api_base_url=settings.SS_API_BASE)
+            ssget.orders(orderDateStart=startDate,orderDateEnd=stopDate)
+            upsPktId=mirai_init_ups_pkt_from_ssapi(ssget)
+            if upsPktId == -1:
+                return render(request, 'ups/shipstation_query.html', {
+                    'error_message': "Problem with the ssapi API call.",
+                })
+    else:
+        dateSpanForm=DateSpanQueryForm()
+    return render(request,'ups/shipstation_query.html', {'dateSpanForm':dateSpanForm})

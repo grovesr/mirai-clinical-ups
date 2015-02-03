@@ -6,9 +6,18 @@ table.site-header {
     width: 100%;
 }
 
-.nav-bar-1 tr, .nav-bar-2 tr {
-    background-color:#666666;
+.nav-bar-1, .nav-bar-2 {
+    border-spacing: 0px;
 }
+
+.nav-bar-1 tr {
+    background-color:#888888;
+}
+
+.nav-bar-2 tr {
+    background-color:#aaaaaa;
+}
+
 
 .nav-bar-1 ul, .nav-bar-2 ul {
     list-style-type: none;
@@ -17,20 +26,19 @@ table.site-header {
 
 .nav-bar-1 li, .nav-bar-2 li {
     display: inline;
-    margin: 5px;
+    margin: 0px;
 }
 
 .nav-bar-1 a, .nav-bar-2 a {
     font-size: 125%;
     text-decoration: none;
+    padding: 0px 10px;
+    border: 0px;
 }
 
 .nav-bar-1 a:hover, .nav-bar-2 a:hover {
     text-decoration: underline;
-}
-
-.nav-bar-1 li:hover, .nav-bar-2 li:hover {
-    background-color: #888888;
+     background: #000000;
 }
 
 a.nav-1-selected, a.nav-2-selected {

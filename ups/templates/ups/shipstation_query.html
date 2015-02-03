@@ -1,0 +1,22 @@
+{% extends "ups/ups_home.html" %}
+{% load staticfiles %}
+{% block extra_scripts %}
+    <link rel="stylesheet" href="http://code.jquery.com/ui/1.11.0/themes/smoothness/jquery-ui.css"> 
+    <script src="http://code.jquery.com/jquery-1.9.1.js"></script>
+    <script src="http://code.jquery.com/ui/1.11.0/jquery-ui.js"></script>
+    <script>
+        $(document).ready(function() {
+        $('.datepicker').datepicker();
+        });
+    </script>
+{% endblock extra_scripts %}
+{% block content %}
+    {% if error_message %}
+        <strong><p>{{ error_message }}</p></strong>
+   {% endif %}
+   <form action="{% url 'ups:shipstation_query' %}" method="post"> 
+        {% csrf_token %}
+        {{ dateSpanForm }}
+        <input type="submit" value="Submit" class="pkt-action-btns" name="Submit">
+    </form>
+{% endblock content %}

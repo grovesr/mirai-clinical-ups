@@ -3,6 +3,7 @@
 	<name>MiraiDebug</name>
 	<comment></comment>
 	<projects>
+		<project>shipstation-api</project>
 	</projects>
 	<buildSpec>
 		<buildCommand>

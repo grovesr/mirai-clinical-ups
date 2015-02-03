@@ -1,7 +1,7 @@
 "use strict";
 $(document).ready(function(){
     //$("#container").append(saverButton);
-    $("#container").append(chooserButton);
+    $("#container").prepend(chooserButton);
 });
 var chooserOptions = {
 
@@ -13,7 +13,7 @@ var chooserOptions = {
 	    if (files.length > 0) {
 	        $("#file_list").before($("<p></p>").text("List of Selected Files:"));
 	        $("#id_files").after($("<input></input>").attr('type="Input"'));
-	        $("form").append('<input type="submit" value="Create PickTicket">');
+	        $("form").append('<input type="submit" value="Create PickTicket" class="pkt-button">');
 	        $(".dropbox-dropin-btn").hide();
 	    }
 	    files.forEach(function(filename) {

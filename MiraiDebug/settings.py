@@ -19,6 +19,11 @@ BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ['MIRAIDEBUG_SECRET']
 
+# Ship Station API
+SS_API_KEY=os.environ['SS_API_KEY']
+SS_API_SECRET=os.environ['SS_API_SECRET']
+SS_API_BASE='https://ssapi.ssapi.com/'
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
@@ -37,7 +42,8 @@ INSTALLED_APPS = (
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'ups',
-    'polls'
+    'polls',
+    'shipstation'
 )
 
 MIDDLEWARE_CLASSES = (

@@ -3,6 +3,7 @@ import urllib2
 import re
 from django.utils import timezone
 from django.core.exceptions import ValidationError
+from ssapi import ssapi
 import datetime
 import time
 import random
@@ -14,7 +15,7 @@ def debug_setup():
     #files.append('https://dl.dropboxusercontent.com/1/view/ke2sxieecxur5x2/Mirai/ShipOrders/SS_withErrors.csv')
     #files.append('https://dl.dropboxusercontent.com/1/view/qckfuzgdicjkctc/Mirai/ShipOrders/unshipped_amazon.txt')
     inputType=mirai_check_args(files)
-    ups_pkt=mirai_initialize_ups_pkt(files, inputType)
+    ups_pkt=mirai_init_ups_pkt_from_file(files, inputType)
     return ups_pkt
 
 def mirai_check_args(args):
@@ -69,26 +70,11 @@ def mirai_get_files(inputType,args):
                 files[poUrl]=['URL ERROR: unable to open URL "' + poUrl + '"&']
     return files
 
-def mirai_initialize_ups_pkt(files,inputType):
+def mirai_init_ups_pkt_from_file(files,inputType):
     reMatchZen=re.compile('.*v_orders_id.*')
     reMatchAmazon=re.compile('.*buyer-phone-number.*')
     reMatchSS=re.compile('.*pack-slip-type.*')
-    warehouse='SD4'
-    company='MIRAI'
-    division='001'
-    timeStamp=time.time()
-    fileTimeStamp=timezone.datetime.fromtimestamp(timeStamp).strftime('%y%m%d%H%M%S')
-    rand='{:010}'.format(random.randrange(1,999999999,1))
-    div='001'
-    fileName=warehouse+company+div+'_FF_PICKTICKET_'+rand+'_'+fileTimeStamp+".txt"
-    ups_pkt=PickTicket()
-    ups_pkt.DOC_DATE=timezone.now()
-    ups_pkt.warehouse=warehouse
-    ups_pkt.CMPY_NAME=company
-    ups_pkt.division=division
-    ups_pkt.timeStamp='{:08x}'.format(int(timeStamp))
-    ups_pkt.fileName=fileName
-    ups_pkt.save()
+    ups_pkt=mirai_create_pkt()
     
     files=mirai_get_files(inputType, files)
     #go through the files and store each row as a CustOrderQueryRow
@@ -99,11 +85,8 @@ def mirai_initialize_ups_pkt(files,inputType):
         for fileLine in contents.splitlines():
             if header:
                 # assume header is the first line
-                queryHeader=CustOrderHeader()
-                queryHeader.headers=fileLine.rstrip()
-                queryHeader.ups_pkt=ups_pkt
-                queryHeader.query=f
-                queryHeader.save()
+                queryHeader=mirai_create_query_header(headers=fileLine.rstrip(),
+                                                      ups_pkt=ups_pkt, query=f)
                 header=False
             else:
                 queryRow=CustOrderQueryRow()
@@ -136,6 +119,67 @@ def mirai_initialize_ups_pkt(files,inputType):
     ups_pkt.save()
     return ups_pkt.id
 
+def mirai_create_pkt():
+    warehouse='SD4'
+    company='MIRAI'
+    division='001'
+    timeStamp=time.time()
+    fileTimeStamp=timezone.datetime.fromtimestamp(timeStamp).strftime('%y%m%d%H%M%S')
+    rand='{:010}'.format(random.randrange(1,999999999,1))
+    div='001'
+    fileName=warehouse+company+div+'_FF_PICKTICKET_'+rand+'_'+fileTimeStamp+".txt"
+    ups_pkt=PickTicket()
+    ups_pkt.DOC_DATE=timezone.now()
+    ups_pkt.warehouse=warehouse
+    ups_pkt.CMPY_NAME=company
+    ups_pkt.division=division
+    ups_pkt.timeStamp='{:08x}'.format(int(timeStamp))
+    ups_pkt.fileName=fileName
+    ups_pkt.save()
+    return ups_pkt
+
+def mirai_create_query_header(headers='',ups_pkt=None,query=''):
+    if not ups_pkt:
+        ups_pkt=PickTicket()
+    queryHeader=CustOrderHeader()
+    queryHeader.headers=headers
+    queryHeader.ups_pkt=ups_pkt
+    queryHeader.query=query
+    queryHeader.save()
+    return queryHeader
+
+def mirai_init_ups_pkt_from_ssapi(ssget):
+    ups_pkt=mirai_create_pkt()
+    queryHeader=mirai_create_query_header(headers=ssget.headers(),
+                                          ups_pkt=ups_pkt,
+                                          query=ssget.query())
+    queryFileTimeStamp=time.time()
+    recordNumber=1
+    for fileLine in contents.splitlines():
+        queryRow=CustOrderQueryRow()
+        queryRow.coHeader=queryHeader
+        queryRow.ups_pkt=ups_pkt
+        queryRow.record=fileLine
+        queryRow.queryRecordNumber=recordNumber
+        queryRow.queryId=queryFileTimeStamp
+        queryRow.query=ssget.query()
+        queryRow.headers=re.split(queryRow.sep, queryRow.coHeader.headers)
+        result=queryRow.read_ss_line()
+        if result < 0:
+            # improperly formatted record
+            queryRow.parseError='PARSE ERROR: improperly formatted line&'
+        queryRow.save()
+        recordNumber+=1
+    result=ups_pkt.parse_po_objects()
+    if result < 0:
+        return result
+    pktStr=ups_pkt.create_pick_ticket_string()
+    ups_pkt.fileContents=pktStr
+    ups_pkt.fileLineSep=os.linesep
+    if result < 0:
+        return result
+    ups_pkt.save()
+    return ups_pkt.id
 # Create your models here.
     
 class PickTicket(models.Model):

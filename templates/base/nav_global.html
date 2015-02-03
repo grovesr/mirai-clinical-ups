@@ -2,19 +2,20 @@
     <tr>
         <td align="right">
             <ul>
-                <li><a{% if home %}
+                <li>
+                    <a {% if home %}
                         class="nav-1-selected"
                     {% else %}
                         class="nav-1-unselected"
                     {% endif %}
                     href="/">Home</a></li>
-                <li><a{% if ups %}
+                <li><a {% if ups %}
                         class="nav-1-selected"
                     {% else %}
                         class="nav-1-unselected"
                     {% endif %}
                     href="/ups">UPS</a></li>
-                <li><a{% if admin %}
+                <li><a {% if admin %}
                         class="nav-1-selected"
                     {% else %}
                         class="nav-1-unselected"
