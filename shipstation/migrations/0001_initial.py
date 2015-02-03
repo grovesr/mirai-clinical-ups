@@ -150,6 +150,7 @@ class Migration(migrations.Migration):
                 ('marketplaceId', models.IntegerField(default=0)),
                 ('marketplace', models.CharField(default=b'', max_length=100)),
                 ('username', models.CharField(default=b'', max_length=100)),
+                ('customer', models.ForeignKey(default=None, to='shipstation.customer')),
             ],
             options={
             },
@@ -200,15 +201,54 @@ class Migration(migrations.Migration):
                 ('unitPrice', models.FloatField(default=0)),
                 ('warehouseLocation', models.CharField(default=b'', max_length=100)),
                 ('productId', models.IntegerField(default=0)),
+                ('order', models.ForeignKey(default=None, to='shipstation.order')),
             ],
             options={
             },
             bases=(models.Model,),
         ),
         migrations.CreateModel(
-            name='ship_to_address',
+            name='order_ship_to_address',
             fields=[
                 ('address_ptr', models.OneToOneField(parent_link=True, auto_created=True, primary_key=True, serialize=False, to='shipstation.address')),
+                ('order', models.ForeignKey(default=None, to='shipstation.order')),
+            ],
+            options={
+            },
+            bases=('shipstation.address',),
+        ),
+        migrations.CreateModel(
+            name='shipment',
+            fields=[
+                ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
+                ('shipmentId', models.IntegerField(default=0)),
+                ('orderId', models.IntegerField(default=0)),
+                ('orderNumber', models.CharField(default=b'', max_length=30)),
+                ('createDate', models.DateTimeField()),
+                ('shipDate', models.DateField()),
+                ('shipmentCost', models.FloatField(default=0.0)),
+                ('trackingNumber', models.CharField(default=b'', max_length=50)),
+                ('isReturnLabel', models.BooleanField(default=False)),
+                ('batchNumber', models.CharField(default=b'', max_length=50)),
+                ('carrierCode', models.CharField(default=b'', max_length=50)),
+                ('serviceCode', models.CharField(default=b'', max_length=50)),
+                ('packageCode', models.CharField(default=b'', max_length=50)),
+                ('confirmation', models.CharField(default=b'', max_length=50)),
+                ('warehouseId', models.IntegerField(default=0)),
+                ('voided', models.BooleanField(default=False)),
+                ('voidDateshipDate', models.DateField()),
+                ('marketplaceNotifiedvoided', models.BooleanField(default=False)),
+                ('notifyErrorMessage', models.TextField(default=b'')),
+            ],
+            options={
+            },
+            bases=(models.Model,),
+        ),
+        migrations.CreateModel(
+            name='shipment_ship_to_address',
+            fields=[
+                ('address_ptr', models.OneToOneField(parent_link=True, auto_created=True, primary_key=True, serialize=False, to='shipstation.address')),
+                ('shipment', models.ForeignKey(default=None, to='shipstation.shipment')),
             ],
             options={
             },
@@ -221,6 +261,7 @@ class Migration(migrations.Migration):
                 ('tagId', models.IntegerField(default=0)),
                 ('name', models.CharField(default=b'', max_length=100)),
                 ('color', models.CharField(default=b'#090909', max_length=7)),
+                ('customer', models.ForeignKey(default=None, to='shipstation.customer')),
             ],
             options={
             },
@@ -233,6 +274,7 @@ class Migration(migrations.Migration):
                 ('value', models.FloatField(default=0.0)),
                 ('units', models.CharField(default=b'', max_length=50)),
                 ('order_item', models.ForeignKey(to='shipstation.order_item')),
+                ('shipment', models.ForeignKey(default=None, to='shipstation.shipment')),
             ],
             options={
             },
@@ -241,13 +283,49 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='item_option',
             name='order_item',
-            field=models.ForeignKey(to='shipstation.order_item'),
+            field=models.ForeignKey(default=None, to='shipstation.order_item'),
+            preserve_default=True,
+        ),
+        migrations.AddField(
+            model_name='international_options',
+            name='order',
+            field=models.ForeignKey(default=None, to='shipstation.order'),
+            preserve_default=True,
+        ),
+        migrations.AddField(
+            model_name='insurance_options',
+            name='shipment',
+            field=models.ForeignKey(default=None, to='shipstation.shipment'),
+            preserve_default=True,
+        ),
+        migrations.AddField(
+            model_name='dimensions',
+            name='shipment',
+            field=models.ForeignKey(default=None, to='shipstation.shipment'),
+            preserve_default=True,
+        ),
+        migrations.AddField(
+            model_name='customs_item',
+            name='international_options',
+            field=models.ForeignKey(default=None, to='shipstation.international_options'),
+            preserve_default=True,
+        ),
+        migrations.AddField(
+            model_name='bill_to_address',
+            name='order',
+            field=models.ForeignKey(default=None, to='shipstation.order'),
             preserve_default=True,
         ),
         migrations.AddField(
             model_name='advanced_options',
             name='order',
             field=models.ForeignKey(to='shipstation.order'),
+            preserve_default=True,
+        ),
+        migrations.AddField(
+            model_name='advanced_options',
+            name='shipment',
+            field=models.ForeignKey(default=None, to='shipstation.shipment'),
             preserve_default=True,
         ),
     ]

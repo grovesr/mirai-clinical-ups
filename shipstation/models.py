@@ -2,6 +2,8 @@ from django.db import models
 
 # Create your models here.
 
+# TODO: Add classes for carriers, products and stores
+
 class order(models.Model):
     """
     Shipstation order model
@@ -44,6 +46,36 @@ class order(models.Model):
     shipDate=models.DateField()#string     The date the order was shipped.
     holdUntilDate=models.DateField()#string     If placed on hold, this date is the expiration date for this order's hold status. The order is moved back to awaiting_shipment on this date.
 
+    def __unicode__(self):
+        return 'Shipstation order: '+str(self.orderId)
+
+class shipment(models.Model):
+    """
+    Shipstation shipment model
+    """
+    shipmentId=models.IntegerField(default=0)
+    orderId=models.IntegerField(default=0)
+    orderNumber=models.CharField(max_length=30,default='')
+    createDate=models.DateTimeField() #2014-10-03T06:51:33.6270000"
+    shipDate=models.DateField()
+    shipmentCost=models.FloatField(default=0.0)
+    insuranceCost=models.FloatField(default=0.0),
+    trackingNumber=models.CharField(max_length=50,default='')
+    isReturnLabel=models.BooleanField(default=False)
+    batchNumber=models.CharField(max_length=50,default='')
+    carrierCode=models.CharField(max_length=50,default='')
+    serviceCode=models.CharField(max_length=50,default='')
+    packageCode=models.CharField(max_length=50,default='')
+    confirmation=models.CharField(max_length=50,default='')
+    warehouseId=models.IntegerField(default=0)
+    voided=models.BooleanField(default=False)
+    voidDateshipDate=models.DateField()
+    marketplaceNotifiedvoided=models.BooleanField(default=False)
+    notifyErrorMessage=models.TextField(default='')
+    
+    def __unicode__(self):
+        return 'Shipstation shipment: '+str(self.shipmentId)
+
 class insurance_options(models.Model):
     """
     Shipstation insuranceOptions model
@@ -54,9 +86,13 @@ class insurance_options(models.Model):
         (SHIPSURANCE,SHIPSURANCE),
         (CARRIER,CARRIER),
     )
+    shipment=models.ForeignKey(shipment, default=None)
     provider=models.CharField(max_length=15,default=CARRIER,choices=providerOptions)#string     Preferred Insurance provider. Available options: "shipsurance" or "carrier"
     insureShipment=models.BooleanField(default=False)#boolean     Indicates whether shipment should be insured.
     insuredValue=models.FloatField(default=0.0)#number     Value to insure
+
+    def __unicode__(self):
+        return 'Shipstation insurance_options: '+self.provider
 
 class international_options(models.Model):
     """
@@ -74,31 +110,45 @@ class international_options(models.Model):
             (RET,'returned goods'),
             (SAMPLE,'sample')
             )
+    order=models.ForeignKey(order, default=None)
     contents=models.CharField(max_length=20,default=MERCH,choices=contentsChoices)#string     Contents of international shipment. Available options are: "merchandise", "documents", "gift", "returned_goods", or "sample"
+    
+
+    def __unicode__(self):
+        return 'Shipstation international_options: '+self.contents
 
 class customs_item(models.Model):
     """
     Shipstation customsItem
     """
+    international_options=models.ForeignKey(international_options, default=None)
     description=models.CharField(max_length=100,default='')#string     A short description of the CustomsItem
     quantity=models.IntegerField(default=0)#number     The quantity for this line item
     value=models.FloatField(default=0.0)#number     The value (in USD) of the line item
     harmonizedTariffCode=models.CharField(max_length=20,default='')#string     The Harmonized Commodity Code for this line item
     countryOfOrigin=models.CharField(max_length=2,default='')#string     The 2-character country code where the item originated
 
+    def __unicode__(self):
+        return 'Shipstation customs_item for order: '+str(self.international_options.order.order_id)
+
 class dimensions(models.Model):
     """
     Shipstation dimensions model
     """
+    shipment=models.ForeignKey(shipment, default=None)
     length=models.FloatField(default=0.0)
     width=models.FloatField(default=0.0)
     height=models.FloatField(default=0.0)
     units=models.CharField(max_length=10,default='')
+    
+    def __unicode__(self):
+        return "Shipstation dimensions: w="+str(self.width)," l="+str(self.length)+" h="+str(self.height)
 
 class advanced_options(models.Model):
     """
     Shipstation AdvancdOptions model
     """
+    shipment=models.ForeignKey(shipment, default=None)
     order=models.ForeignKey(order)
     warehouseId=models.IntegerField(default=0)#number     Specifies the warehouse where to the order is to ship from.
     nonMachinable=models.BooleanField(default=False)#boolean     Specifies whether the order is non-machinable.
@@ -113,12 +163,15 @@ class advanced_options(models.Model):
     billToAccount=models.CharField(max_length=50,default='')#string     Account number of billToParty.
     billToPostalCode=models.CharField(max_length=50,default='')#string     Postal Code of billToParty.
     billToCountryCode=models.CharField(max_length=50,default='')#string     Country Code of billToParty.
+    
+    def __unicode__(self):
+        return "Shipstation advance_options for orderId:"+str(self.order.orderId)
 
 class order_item(models.Model):
     """
     Shipstation orderItem model
     """
-    models.ForeignKey(order)
+    order=models.ForeignKey(order, default=None)
     lineItemKey=models.CharField(max_length=100, default=None)
     sku=models.CharField(max_length=100,default='')
     name=models.CharField(max_length=100,default='')
@@ -128,21 +181,30 @@ class order_item(models.Model):
     warehouseLocation=models.CharField(max_length=100,default='')
     productId=models.IntegerField(default=0)
     
+    def __unicode__(self):
+        return "Shipstation order_item: "+self.lineItemKey+" for orderId:"+str(self.order.orderId)
+    
 class item_option(models.Model):
     """
     Shipstation item_option model
     """
-    order_item=models.ForeignKey(order_item)
+    order_item=models.ForeignKey(order_item, default=None)
     name=models.CharField(max_length=50,default='')
     value=models.CharField(max_length=50,default='')
+    def __unicode__(self):
+        return "Shipstation item_option: "+self.name+" for order_item:"+self.order_item.lineItemKey
 
 class weight(models.Model):
     """
     Shipstation weight model
     """
+    shipment=models.ForeignKey(shipment, default=None)
     order_item=models.ForeignKey(order_item)
     value=models.FloatField(default=0.0)
     units=models.CharField(max_length=50,default='')
+    
+    def __unicode__(self):
+        return "Shipstation weight: "+str(self.value)+" for shipment:"+str(self.shipment.shipmentId)
     
 class customer(models.Model):
     """
@@ -160,23 +222,33 @@ class customer(models.Model):
     phone=models.CharField(max_length=15,default='',blank=True)
     email=models.CharField(max_length=100,default='',blank=True)
     addressVerified=models.CharField(max_length=35,default='')
+    
+    def __unicode__(self):
+        return "Shipstation customer "+self.name
 
 class marketplace_user_name(models.Model):
     """
     Shipstation marketplace user name model
     """
-    
+    customer=models.ForeignKey(customer, default=None)
     marketplaceId=models.IntegerField(default=0)
     marketplace=models.CharField(max_length=100,default='')
     username=models.CharField(max_length=100,default='')
+    
+    def __unicode__(self):
+        return "Shipstation marketplace_user_name for "+self.customer.name
     
 class tag(models.Model):
     """
     Shipstation tag model
     """
+    customer=models.ForeignKey(customer, default=None)
     tagId=models.IntegerField(default=0)
     name=models.CharField(max_length=100,default='')
     color=models.CharField(max_length=7,default='#090909')
+    
+    def __unicode__(self):
+        return "Shipstation tag "+self.name
     
 class address(models.Model):
     """
@@ -208,13 +280,27 @@ class address(models.Model):
     
 class bill_to_address(address):
     """
-    Shipstation billTo address
+    Shipstation bill to address
     """
-    models.ForeignKey(order)
+    order=models.ForeignKey(order, default=None)
     
-class ship_to_address(address):
-    """
-    Shipstation billTo address
-    """
-    models.ForeignKey(order)
+    def __unicode__(self):
+        return "Shipstation bill_to_address for order "+str(self.order.orderId)
     
+class order_ship_to_address(address):
+    """
+    Shipstation ship to address for order
+    """
+    order=models.ForeignKey(order, default=None)
+    
+    def __unicode__(self):
+        return "Shipstation ship_to_address for order "+str(self.order.orderId)
+    
+class shipment_ship_to_address(address):
+    """
+    Shipstation ship to address for shipment
+    """
+    shipment=models.ForeignKey(shipment, default=None)
+    
+    def __unicode__(self):
+        return "Shipstation ship_to_address for shipment "+str(self.shipment.shipmentId)

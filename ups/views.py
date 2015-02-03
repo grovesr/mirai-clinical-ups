@@ -2,7 +2,7 @@ from django.shortcuts import render
 from django.http import HttpResponseRedirect
 from django.core.urlresolvers import reverse
 from django.conf import settings
-from ssapi import  ss
+from ssapi import  ssapi
 import datetime
 from django.utils import timezone
 from django.core.exceptions import ObjectDoesNotExist
@@ -215,8 +215,8 @@ def shipstation_query(request):
             stopDate=request.POST.get('stopDate')
             startDate=startDate.replace('/','-')
             stopDate=stopDate.replace('/','-')
-            ssget=ss.get(api_key=settings.SS_API_KEY,api_secret=settings.SS_API_SECRET,api_base_url=settings.SS_API_BASE)
-            ssget.orders(orderDateStart=startDate,orderDateEnd=stopDate)
+            ssget=ssapi.get(api_key=settings.SS_API_KEY,api_secret=settings.SS_API_SECRET,api_endpoint=settings.SS_API_ENDPOINT)
+            ssget.orders(orderDateStart=startDate,orderDateEnd=stopDate,status='awaiting_shipmentssget=')
             upsPktId=mirai_init_ups_pkt_from_ssapi(ssget)
             if upsPktId == -1:
                 return render(request, 'ups/shipstation_query.html', {

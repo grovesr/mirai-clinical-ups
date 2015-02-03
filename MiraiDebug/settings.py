@@ -22,7 +22,7 @@ SECRET_KEY = os.environ['MIRAIDEBUG_SECRET']
 # Ship Station API
 SS_API_KEY=os.environ['SS_API_KEY']
 SS_API_SECRET=os.environ['SS_API_SECRET']
-SS_API_BASE='https://ssapi.ssapi.com/'
+SS_API_ENDPOINT='https://ssapi.ssapi.com/'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True

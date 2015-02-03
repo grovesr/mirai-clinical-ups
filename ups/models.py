@@ -3,7 +3,7 @@ import urllib2
 import re
 from django.utils import timezone
 from django.core.exceptions import ValidationError
-from ssapi import ssapi
+from shipstation.models import order
 import datetime
 import time
 import random
@@ -148,12 +148,26 @@ def mirai_create_query_header(headers='',ups_pkt=None,query=''):
     queryHeader.save()
     return queryHeader
 
-def mirai_init_ups_pkt_from_ssapi(ssget):
+def mirai_init_ups_pkt_from_ssapi(ssgetorders):
+    """
+    takes a Shipstation get object that has retrieved a list of orders
+    and populates the Shipstation tables in preparation for creating
+    a PickTicket from these orders
+    """
     ups_pkt=mirai_create_pkt()
-    queryHeader=mirai_create_query_header(headers=ssget.headers(),
+    queryHeader=mirai_create_query_header(headers=ssgetorders.headers(),
                                           ups_pkt=ups_pkt,
-                                          query=ssget.query())
+                                          query=ssgetorders.query())
     queryFileTimeStamp=time.time()
+    jsData=ssgetorders.json()
+    if isinstance(jsData,dict):
+        data=[]
+        data.append(jsData)
+    else:
+        data=jsData
+        
+    for iter in data:
+        
     recordNumber=1
     for fileLine in contents.splitlines():
         queryRow=CustOrderQueryRow()
