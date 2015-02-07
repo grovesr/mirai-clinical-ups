@@ -2,11 +2,12 @@ from django.shortcuts import render
 from django.http import HttpResponseRedirect
 from django.core.urlresolvers import reverse
 from django.conf import settings
-from ssapi import  ssapi
+from ssapi import ssapi
 import datetime
 from django.utils import timezone
 from django.core.exceptions import ObjectDoesNotExist
 from ups.models import mirai_check_args, mirai_init_ups_pkt_from_file,mirai_init_ups_pkt_from_ssapi, PickTicket, PH, PD
+from shipstation.models import parse_orders, get_orderIds
 from ups.forms import FileNameForm, PhForm, PdForm, TitleErrorList, DateSpanQueryForm
 from django.forms.models import inlineformset_factory, modelform_factory
 from django.http.request import HttpRequest
@@ -211,17 +212,37 @@ def shipstation_query(request):
     if request.method=="POST":
         dateSpanForm=DateSpanQueryForm(request.POST)
         if dateSpanForm.is_valid():
-            startDate=request.POST.get('startDate')
-            stopDate=request.POST.get('stopDate')
-            startDate=startDate.replace('/','-')
-            stopDate=stopDate.replace('/','-')
+            startDate=request.POST.get('startDate').replace('/','-')
+            stopDate=request.POST.get('stopDate').replace('/','-')
             ssget=ssapi.get(api_key=settings.SS_API_KEY,api_secret=settings.SS_API_SECRET,api_endpoint=settings.SS_API_ENDPOINT)
-            ssget.orders(orderDateStart=startDate,orderDateEnd=stopDate,status='awaiting_shipmentssget=')
-            upsPktId=mirai_init_ups_pkt_from_ssapi(ssget)
+            ssget.stores()
+            stores={}
+            for store in ssget.json():
+                stores[store['storeName']]=store['storeId']
+            orderIds=[]
+            for storeName,storeId in stores.iteritems():
+                pageNo=1
+                morePages=True
+                while morePages:
+                    ssget.orders(orderDateStart=startDate,orderDateEnd=stopDate,
+                                 orderStatus='awaiting_shipment',storeId=storeId,page=pageNo)
+#                     ssget.orders(orderDateStart=startDate,orderDateEnd=stopDate,
+#                                  storeId=storeId,page=pageNo)
+                    if ssget.json()['total']==0:
+                        break
+                    print ssget.json()['total']
+                    morePages=parse_orders(ssget,storeName,storeId)
+                    orderIds+=get_orderIds(ssget)
+            if len(orderIds)==0:
+                return render(request, 'ups/shipstation_query.html', {
+                    'error_message': "No orders found awaiting shipment for this date range",
+                })
+            upsPktId=mirai_init_ups_pkt_from_ssapi(ssget,orderIds)
             if upsPktId == -1:
                 return render(request, 'ups/shipstation_query.html', {
                     'error_message': "Problem with the ssapi API call.",
                 })
+            return HttpResponseRedirect(reverse('ups:pick_ticket_detail',args=[upsPktId,]))
     else:
         dateSpanForm=DateSpanQueryForm()
     return render(request,'ups/shipstation_query.html', {'dateSpanForm':dateSpanForm})

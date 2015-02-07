@@ -3,7 +3,7 @@ import urllib2
 import re
 from django.utils import timezone
 from django.core.exceptions import ValidationError
-from shipstation.models import order
+from shipstation.models import order, order_item, order_ship_to_address
 import datetime
 import time
 import random
@@ -110,6 +110,7 @@ def mirai_init_ups_pkt_from_file(files,inputType):
             recordNumber+=1
     result=ups_pkt.parse_po_objects()
     if result < 0:
+        ups_pkt.delete()
         return result
     pktStr=ups_pkt.create_pick_ticket_string()
     ups_pkt.fileContents=pktStr
@@ -148,44 +149,39 @@ def mirai_create_query_header(headers='',ups_pkt=None,query=''):
     queryHeader.save()
     return queryHeader
 
-def mirai_init_ups_pkt_from_ssapi(ssgetorders):
+
+
+def mirai_init_ups_pkt_from_ssapi(ssgetorders,orderIds):
     """
     takes a Shipstation get object that has retrieved a list of orders
     and populates the Shipstation tables in preparation for creating
     a PickTicket from these orders
     """
+    orders=[]
+    for orderId in orderIds:
+        orders.append(order.objects.get(orderId=orderId))
     ups_pkt=mirai_create_pkt()
-    queryHeader=mirai_create_query_header(headers=ssgetorders.headers(),
-                                          ups_pkt=ups_pkt,
-                                          query=ssgetorders.query())
     queryFileTimeStamp=time.time()
-    jsData=ssgetorders.json()
-    if isinstance(jsData,dict):
-        data=[]
-        data.append(jsData)
-    else:
-        data=jsData
-        
-    for iter in data:
-        
     recordNumber=1
-    for fileLine in contents.splitlines():
-        queryRow=CustOrderQueryRow()
-        queryRow.coHeader=queryHeader
-        queryRow.ups_pkt=ups_pkt
-        queryRow.record=fileLine
-        queryRow.queryRecordNumber=recordNumber
-        queryRow.queryId=queryFileTimeStamp
-        queryRow.query=ssget.query()
-        queryRow.headers=re.split(queryRow.sep, queryRow.coHeader.headers)
-        result=queryRow.read_ss_line()
-        if result < 0:
-            # improperly formatted record
-            queryRow.parseError='PARSE ERROR: improperly formatted line&'
-        queryRow.save()
-        recordNumber+=1
+    queryHeader=mirai_create_query_header(ssgetorders.headers(),
+                                                      ups_pkt=ups_pkt, query=ssgetorders.query())
+    for thisOrder in orders:
+        for orderItem in order_item.objects.filter(order=thisOrder.orderId):
+            queryRow=CustOrderQueryRow()
+            queryRow.ups_pkt=ups_pkt
+            queryRow.coHeader=queryHeader
+            queryRow.queryRecordNumber=recordNumber
+            queryRow.queryId=queryFileTimeStamp
+            queryRow.query=ssgetorders.query()
+            result=queryRow.read_ssapi_line(orderItem)
+            if result < 0:
+                # improperly formatted record
+                queryRow.parseError='PARSE ERROR: improperly formatted line&'
+            queryRow.save()
+            recordNumber+=1
     result=ups_pkt.parse_po_objects()
     if result < 0:
+        ups_pkt.delete()
         return result
     pktStr=ups_pkt.create_pick_ticket_string()
     ups_pkt.fileContents=pktStr
@@ -257,7 +253,7 @@ class PickTicket(models.Model):
         orderIds=CustOrderQueryRow.objects.filter(ups_pkt=self.id).values('orderId').distinct()
         #for each order query row within a unique orderId (may consist of multiple order lines)
         for orderId in orderIds:
-            phItem=PH()
+            phItem=PH(ups_pkt=self)
             coLines=CustOrderQueryRow.objects.filter(orderId=orderId['orderId']).filter(ups_pkt=self.id)
             #for each custOrder line with a given unique orderId
             for coLine in coLines:
@@ -285,8 +281,9 @@ class PickTicket(models.Model):
                 if len(phItem.PHI_SPL_INSTR_CODE) == 0:
                     phItem.PHI_SPL_INSTR_CODE='01,08'
                 phItem.coHeader=coLine.coHeader
-                phItem.ups_pkt=self
-                phItem.parse(coLine)
+                result = phItem.parse(coLine)
+                if result < 0:
+                    return result
                 itemIndex+=1
                 # save the PH object so we have an ID to save with the PD objects being added below
                 phItem.save()
@@ -519,7 +516,7 @@ class CustOrderQueryRow(models.Model):
     Sep gives a clue to how to parse the record
     """
     ups_pkt = models.ForeignKey(PickTicket)
-    coHeader=models.ForeignKey(CustOrderHeader)
+    coHeader=models.ForeignKey(CustOrderHeader,null=True) # this will be blank when the query is from an API call
     query=models.CharField(max_length=1024, default='')
     queryId=models.FloatField(default=0)
     queryRecordNumber=models.IntegerField(default=0)
@@ -530,19 +527,19 @@ class CustOrderQueryRow(models.Model):
     orderId=models.CharField(max_length=50, default='')
     shipToName=models.CharField(max_length=50, default='')
     shipToAddress1=models.CharField(max_length=100, default='')
-    shipToAddress2=models.CharField(max_length=100, default='')
-    shipToAddress3=models.CharField(max_length=100, default='')
+    shipToAddress2=models.CharField(max_length=100, default='',null=True,blank=True)
+    shipToAddress3=models.CharField(max_length=100, default='',null=True,blank=True)
     shipToCity=models.CharField(max_length=100,default='')
     shipToState=models.CharField(max_length=100,default='')
     shipToZip=models.CharField(max_length=100,default='')
     shipToCntry=models.CharField(max_length=100,default='')
-    packSlipType=models.CharField(max_length=50,default='')
-    carrier=models.CharField(max_length=50,default='')
-    orderType=models.CharField(max_length=50,default='')
-    serviceLevel=models.CharField(max_length=50,default='')
-    buyerEmail=models.EmailField(max_length=254,default='')
+    packSlipType=models.CharField(max_length=50,default='',blank=True)
+    carrier=models.CharField(max_length=50,default='',blank=True,null=True)
+    orderType=models.CharField(max_length=50,default='',blank=True)
+    serviceLevel=models.CharField(max_length=50,default='',blank=True,null=True)
+    buyerEmail=models.EmailField(max_length=254,default='',blank=True)
     sku=models.CharField(max_length=50,default='')
-    productName=models.CharField(max_length=500,default='')
+    productName=models.CharField(max_length=500,default='',blank=True)
     quantity=models.IntegerField(default=0)
         
     def get_headers(self):
@@ -596,6 +593,29 @@ class CustOrderQueryRow(models.Model):
             self.purchaseDate=ymd[1]+'/'+ymd[2]+'/'+ymd[0]+' '+pieces[1]
         except:
             self.purchaseDate='00/00/00 00:00:00'
+    
+    def read_ssapi_line(self, orderItem):
+        order=orderItem.order
+        shipToAddress=order_ship_to_address.objects.get(order=order.orderId)
+        self.type='SS'
+        self.sku=orderItem.sku
+        self.productName=orderItem.name
+        self.orderId=order.orderId
+        self.quantity=orderItem.quantity
+        self.purchaseDate=order.orderDate
+        self.serviceLevel=order.serviceCode
+        self.buyerEmail=order.customerEmail
+        self.shipToName=shipToAddress.name
+        self.shipToAddress1=shipToAddress.street1
+        self.shipToAddress2=shipToAddress.street2
+        self.shipToAddress3=shipToAddress.street3
+        self.shipToCity=shipToAddress.city
+        self.shipToState=shipToAddress.state
+        self.shipToZip=shipToAddress.postalCode
+        self.shipToCntry=shipToAddress.country
+        self.carrier=order.carrierCode
+        self.orderType=order.orderType
+        return(0)
     
     def read_ss_line(self):
         headers=self.get_headers()
@@ -819,29 +839,41 @@ class PH(models.Model):
             if len(self.PH1_CUST_PO_NBR) == 0:
                 self.PH1_CUST_PO_NBR=coLine.orderId[:26]
             if len(self.SHIPTO_NAME) == 0:
-                self.SHIPTO_NAME=coLine.shipToName[:35]
+                if coLine.shipToName:
+                    self.SHIPTO_NAME=coLine.shipToName[:35]
             if len(self.SHIPTO_ADDR_1) == 0:
-                self.SHIPTO_ADDR_1=coLine.shipToAddress1[:75]
+                if coLine.shipToAddress1:
+                    self.SHIPTO_ADDR_1=coLine.shipToAddress1[:75]
             if len(self.SHIPTO_ADDR_2) == 0:
-                self.SHIPTO_ADDR_2=coLine.shipToAddress2[:75]
+                if coLine.shipToAddress2:
+                    self.SHIPTO_ADDR_2=coLine.shipToAddress2[:75]
             if len(self.SHIPTO_ADDR_3) == 0:
-                self.SHIPTO_ADDR_3=coLine.shipToAddress3[:75]
+                if coLine.shipToAddress3:
+                    self.SHIPTO_ADDR_3=coLine.shipToAddress3[:75]
             if len(self.SHIPTO_CITY) == 0:
-                self.SHIPTO_CITY=coLine.shipToCity[:40]
+                if coLine.shipToCity:
+                    self.SHIPTO_CITY=coLine.shipToCity[:40]
             if len(self.SHIPTO_STATE) == 0:
-                self.SHIPTO_STATE=coLine.shipToState[:3]
+                if coLine.shipToState:
+                    self.SHIPTO_STATE=coLine.shipToState[:3]
             if len(self.SHIPTO_ZIP) == 0:
-                self.SHIPTO_ZIP=coLine.shipToZip[:11]
+                if coLine.shipToZip:
+                    self.SHIPTO_ZIP=coLine.shipToZip[:11]
             if len(self.SHIPTO_CNTRY) == 0:
-                self.SHIPTO_CNTRY=coLine.shipToCntry[:4]
+                if coLine.shipToCntry:
+                    self.SHIPTO_CNTRY=coLine.shipToCntry[:4]
             if len(self.PACK_SLIP_TYPE) == 0:
-                self.PACK_SLIP_TYPE=coLine.packSlipType[:2]
+                if coLine.packSlipType:
+                    self.PACK_SLIP_TYPE=coLine.packSlipType[:2]
             if len(self.ORD_TYPE) == 0:
-                self.ORD_TYPE=coLine.orderType[:2]
+                if coLine.orderType:
+                    self.ORD_TYPE=coLine.orderType[:2]
             if len(self.SHIP_VIA) == 0:
-                self.SHIP_VIA=self.parse_ship_via(coLine.serviceLevel)
+                if self.parse_ship_via:
+                    self.SHIP_VIA=self.parse_ship_via(coLine.serviceLevel)
             if len(self.PHI_SPL_INSTR_DESC) == 0:
-                self.PHI_SPL_INSTR_DESC=coLine.buyerEmail[:135]
+                if coLine.buyerEmail:
+                    self.PHI_SPL_INSTR_DESC=coLine.buyerEmail[:135]
         except:
             return(-1)
         return(0)
@@ -856,10 +888,14 @@ class PH(models.Model):
             return('UUSP')
     def add_detail(self,index,coLine):
         pdItem=PD()
-        pdItem.CUST_SKU=coLine.sku[:20]
-        pdItem.SIZE_DESC=coLine.productName[:15]
-        pdItem.ORIG_ORD_QTY=str(coLine.quantity)[:9]
-        pdItem.ORIG_PKT_QTY=str(coLine.quantity)[:9]
+        if coLine.sku:
+            pdItem.CUST_SKU=coLine.sku[:20]
+        if coLine.productName[:15]:
+            pdItem.SIZE_DESC=coLine.productName[:15]
+        if coLine.quantity:
+            pdItem.ORIG_ORD_QTY=str(coLine.quantity)[:9]
+        if coLine.quantity:
+            pdItem.ORIG_PKT_QTY=str(coLine.quantity)[:9]
         pdItem.PKT_SEQ_NBR='{:09}'.format(index)
         pdItem.STAT_CODE='00'
         pdItem.ups_ph=self
