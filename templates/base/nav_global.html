@@ -15,6 +15,12 @@
                         class="nav-1-unselected"
                     {% endif %}
                     href="/ups">UPS</a></li>
+                <li><a {% if shipstation %}
+                        class="nav-1-selected"
+                    {% else %}
+                        class="nav-1-unselected"
+                    {% endif %}
+                    href="/shipstation">Ship Station</a></li>
                 <li><a {% if admin %}
                         class="nav-1-selected"
                     {% else %}

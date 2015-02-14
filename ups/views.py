@@ -1,16 +1,16 @@
 from django.shortcuts import render
 from django.http import HttpResponseRedirect
 from django.core.urlresolvers import reverse
-from django.conf import settings
-from ssapi import ssapi
 import datetime
 from django.utils import timezone
 from django.core.exceptions import ObjectDoesNotExist
-from ups.models import mirai_check_args, mirai_init_ups_pkt_from_file,mirai_init_ups_pkt_from_ssapi, PickTicket, PH, PD
+from ssapi import ssapi
+from django.conf import settings
 from shipstation.models import parse_orders, get_orderIds
-from ups.forms import FileNameForm, PhForm, PdForm, TitleErrorList, DateSpanQueryForm
+from ups.models import mirai_check_args, mirai_init_ups_pkt_from_file,mirai_init_ups_pkt_from_ssapi, PickTicket, PH, PD
+from ups.forms import FileNameForm, PhForm, PdForm, TitleErrorList
+from MiraiDebug.forms import DateSpanQueryForm
 from django.forms.models import inlineformset_factory, modelform_factory
-from django.http.request import HttpRequest
 
 # helper functions
 def bind_formset(formset):
@@ -71,7 +71,8 @@ def pick_ticket_detail(request, pk):
             ups_pkt.delete()
             return HttpResponseRedirect(reverse('ups:pick_ticket_index'))
     return render(request,'ups/pick_ticket_detail.html', {'ups_pkt':ups_pkt,
-                                                          "ups":1,"picktickets":1,})
+                                                          "ups":1,
+                                                          "picktickets":1,})
 
 def pick_ticket_edit_ph(request, pk):
     try:
@@ -85,7 +86,10 @@ def pick_ticket_edit_ph(request, pk):
         pdForms=PdInlineFormset(request.POST,instance=ups_ph, queryset=pdQuerySet, error_class=TitleErrorList)
         if pdForms.is_valid():
             pdForms.save()
-            return HttpResponseRedirect(reverse('ups:pick_ticket_edit_ph',args=[ups_ph.id,]))
+            return HttpResponseRedirect(reverse('ups:pick_ticket_edit_ph',
+                                                args=[ups_ph.id,]),{"ups":1,
+                                                "picktickets":1,
+                                                })
     else:
         pdForms=PdInlineFormset(instance=ups_ph, error_class=TitleErrorList)
         pdForms=bind_formset(pdForms)
@@ -95,7 +99,8 @@ def pick_ticket_edit_ph(request, pk):
     else:
         warning_message="Errors found, fix items highlighted in red before saving"
     return render(request,"ups/pick_ticket_edit_ph.html", {"ups_ph":ups_ph,
-                                                           "ups":1,"picktickets":1,
+                                                           "ups":1,
+                                                           "picktickets":1,
                 "pdForms": pdForms,"warning_message":warning_message,
     })
 
@@ -114,7 +119,10 @@ def pick_ticket_edit(request, pk):
             if phForms.is_valid() and pktForm.is_valid():
                 phForms.save()
                 pktForm.save()
-                return HttpResponseRedirect(reverse('ups:pick_ticket_edit',args=[ups_pkt.id,]))
+                return HttpResponseRedirect(reverse('ups:pick_ticket_edit',args=[ups_pkt.id,]),
+                                                {"ups":1,
+                                                "picktickets":1,
+                                                })
         if 'Delete' in request.POST:
             ups_pkt.delete()
             return HttpResponseRedirect(reverse('ups:pick_ticket_index'))
@@ -177,20 +185,29 @@ def pick_ticket_index(request):
             except KeyError:
                 return render(request, 'ups/pick_ticket_index.html', {
                     'error_message': "No files selected.",
+                    "ups":1,
+                    "picktickets":1,
                 })
             inputType=mirai_check_args(files)
             if  inputType== -1:
                 return render(request, 'ups/pick_ticket_index.html', {
                     'error_message': "Problem with the files.",
+                    "ups":1,
+                    "picktickets":1,
                 })
             upsPktId=mirai_init_ups_pkt_from_file(files,inputType)
             if upsPktId == -1:
                 return render(request, 'ups/pick_ticket_index.html', {
                     'error_message': "Problem with the files.",
+                    "ups":1,
+                    "picktickets":1,
                 })
             #
             # redirect to a new URL:)
-            return HttpResponseRedirect(reverse('ups:pick_ticket_detail',args=[upsPktId,]))
+            return HttpResponseRedirect(reverse('ups:pick_ticket_detail',args=[upsPktId,]),
+                                        {"ups":1,
+                                        "picktickets":1,
+                                         })
     # if a GET (or any other method) we'll create a blank form
     else:
         form=FileNameForm()
@@ -208,7 +225,7 @@ def pick_ticket_index(request):
         return render(request,'ups/pick_ticket_index.html', {'error_message':'No PickTickets to display'})
     return render(request,'ups/pick_ticket_index.html', {'pkt_list':pkt_list})
 
-def shipstation_query(request):
+def pick_ticket_from_ssapi(request):
     if request.method=="POST":
         dateSpanForm=DateSpanQueryForm(request.POST)
         if dateSpanForm.is_valid():
@@ -234,15 +251,27 @@ def shipstation_query(request):
                     morePages=parse_orders(ssget,storeName,storeId)
                     orderIds+=get_orderIds(ssget)
             if len(orderIds)==0:
-                return render(request, 'ups/shipstation_query.html', {
+                return render(request, 'ups/pick_ticket_from_ssapi.html', {
                     'error_message': "No orders found awaiting shipment for this date range",
+                    'dateSpanForm':dateSpanForm,
+                    "ups":1,
+                    "picktickets":1,
                 })
             upsPktId=mirai_init_ups_pkt_from_ssapi(ssget,orderIds)
             if upsPktId == -1:
-                return render(request, 'ups/shipstation_query.html', {
+                return render(request, 'ups/pick_ticket_from_ssapi.html', {
                     'error_message': "Problem with the ssapi API call.",
+                    'dateSpanForm':dateSpanForm,
+                    "ups":1,
+                    "picktickets":1,
                 })
-            return HttpResponseRedirect(reverse('ups:pick_ticket_detail',args=[upsPktId,]))
+            return HttpResponseRedirect(reverse('ups:pick_ticket_detail',args=[upsPktId,]),
+                                        {
+                                         'dateSpanForm':dateSpanForm,
+                                        "ups":1,
+                                        "picktickets":1,})
     else:
         dateSpanForm=DateSpanQueryForm()
-    return render(request,'ups/shipstation_query.html', {'dateSpanForm':dateSpanForm})
+    return render(request,'ups/pick_ticket_from_ssapi.html', {'dateSpanForm':dateSpanForm,
+                                                              "ups":1,
+                                                              "picktickets":1,})

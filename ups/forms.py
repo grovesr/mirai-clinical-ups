@@ -1,18 +1,10 @@
 from django import forms
-from functools import partial
 from django.forms.utils import ErrorList
 from ups.models import PH, PD
-from django.forms.models import fields_for_model
-
-
-
+    
 class FileNameForm(forms.Form):
     files=forms.CharField(widget=forms.HiddenInput, max_length=1024)
     
-class DateSpanQueryForm(forms.Form):
-    DateInput = partial(forms.DateInput, {'class': 'datepicker'})
-    startDate=forms.DateField(widget=DateInput())
-    stopDate=forms.DateField(widget=DateInput())
 
 class PhForm(forms.ModelForm):
     class Meta:
