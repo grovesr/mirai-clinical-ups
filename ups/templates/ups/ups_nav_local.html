@@ -1,0 +1,32 @@
+<table class="nav-bar-2" width="100%">
+    <tr>
+        <td align="right">
+            <ul>
+                <li><a{% if picktickets %}
+                        class="nav-2-selected"
+                    {% else %}
+                        class="nav-2-unselected"
+                    {% endif %}
+                    href="{% url 'ups:pick_ticket_index' %}">PickTickets</a></li>
+                <li><a{% if asn %}
+                        class="nav-2-selected"
+                    {% else %}
+                        class="nav-2-unselected"
+                    {% endif %}
+                    href="/asn">ASN</a></li>
+                <li><a{% if itemmaster %}
+                        class="nav-2-selected"
+                    {% else %}
+                        class="nav-2-unselected"
+                    {% endif %}
+                    href="/asn">ItemMaster</a></li>
+                <li><a{% if purshaseord %}
+                        class="nav-2-selected"
+                    {% else %}
+                        class="nav-2-unselected"
+                    {% endif %}
+                    href="/asn">PurchaseOrd</a></li>
+            </ul>
+        </td>
+    </tr>
+</table>

@@ -1,0 +1,368 @@
+# -*- coding: utf-8 -*-
+from __future__ import unicode_literals
+
+from django.db import models, migrations
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('shipstation', '0010_auto_20150211_0936'),
+    ]
+
+    operations = [
+        migrations.AlterField(
+            model_name='customer',
+            name='addressVerified',
+            field=models.CharField(default=b'', max_length=35, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='customer',
+            name='city',
+            field=models.CharField(default=b'', max_length=40, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='customer',
+            name='company',
+            field=models.CharField(default=b'', max_length=35, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='customer',
+            name='countryCode',
+            field=models.CharField(default=b'', max_length=4, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='customer',
+            name='email',
+            field=models.CharField(default=b'', max_length=100, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='customer',
+            name='name',
+            field=models.CharField(default=b'', max_length=100, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='customer',
+            name='phone',
+            field=models.CharField(default=b'', max_length=15, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='customer',
+            name='postalCode',
+            field=models.CharField(default=b'', max_length=11, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='customer',
+            name='state',
+            field=models.CharField(default=b'', max_length=3, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='customer',
+            name='street1',
+            field=models.CharField(default=b'', max_length=100, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='customer',
+            name='street2',
+            field=models.CharField(default=b'', max_length=100, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='customs_item',
+            name='countryOfOrigin',
+            field=models.CharField(default=b'', max_length=2, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='customs_item',
+            name='description',
+            field=models.CharField(default=b'', max_length=100, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='customs_item',
+            name='harmonizedTariffCode',
+            field=models.CharField(default=b'', max_length=20, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='customs_item',
+            name='quantity',
+            field=models.IntegerField(default=0, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='customs_item',
+            name='value',
+            field=models.FloatField(default=0.0, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='dimensions',
+            name='height',
+            field=models.FloatField(default=0.0, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='dimensions',
+            name='length',
+            field=models.FloatField(default=0.0, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='dimensions',
+            name='units',
+            field=models.CharField(default=b'', max_length=10, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='dimensions',
+            name='width',
+            field=models.FloatField(default=0.0, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='international_options',
+            name='contents',
+            field=models.CharField(default=b'merchandise', max_length=20, null=True, blank=True, choices=[(b'merchandise', b'merchandise'), (b'documents', b'documents'), (b'gift', b'gift'), (b'returned_goods', b'returned goods'), (b'sample', b'sample')]),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='item_option',
+            name='name',
+            field=models.CharField(default=b'', max_length=50, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='item_option',
+            name='value',
+            field=models.CharField(default=b'', max_length=50, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='marketplace_user_name',
+            name='marketplace',
+            field=models.CharField(default=b'', max_length=100, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='marketplace_user_name',
+            name='marketplaceId',
+            field=models.IntegerField(default=0, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='marketplace_user_name',
+            name='username',
+            field=models.CharField(default=b'', max_length=100, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='order',
+            name='orderKey',
+            field=models.CharField(default=b'', max_length=50, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='order',
+            name='orderNumber',
+            field=models.CharField(default=b'', max_length=100, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='order',
+            name='orderType',
+            field=models.CharField(default=b'', max_length=50, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='order',
+            name='packSlipType',
+            field=models.CharField(default=b'', max_length=50, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='order_advanced_options',
+            name='storeId',
+            field=models.IntegerField(default=0, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='order_insurance_options',
+            name='insuredValue',
+            field=models.FloatField(default=0.0, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='order_insurance_options',
+            name='provider',
+            field=models.CharField(default=b'carrier', max_length=15, null=True, blank=True, choices=[(b'shipsurance', b'shipsurance'), (b'carrier', b'carrier')]),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='order_item',
+            name='quantity',
+            field=models.IntegerField(default=0, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='order_item',
+            name='sku',
+            field=models.CharField(default=b'', max_length=100, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='order_item_weight',
+            name='units',
+            field=models.CharField(default=b'', max_length=50, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='order_item_weight',
+            name='value',
+            field=models.FloatField(default=0.0, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment',
+            name='batchNumber',
+            field=models.CharField(default=b'', max_length=50, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment',
+            name='carrierCode',
+            field=models.CharField(default=b'', max_length=50, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment',
+            name='confirmation',
+            field=models.CharField(default=b'', max_length=50, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment',
+            name='createDate',
+            field=models.DateTimeField(null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment',
+            name='notifyErrorMessage',
+            field=models.TextField(default=b'', null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment',
+            name='orderId',
+            field=models.IntegerField(default=0, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment',
+            name='orderNumber',
+            field=models.CharField(default=b'', max_length=30, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment',
+            name='packageCode',
+            field=models.CharField(default=b'', max_length=50, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment',
+            name='serviceCode',
+            field=models.CharField(default=b'', max_length=50, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment',
+            name='shipDate',
+            field=models.DateTimeField(null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment',
+            name='shipmentCost',
+            field=models.FloatField(default=0.0, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment',
+            name='trackingNumber',
+            field=models.CharField(default=b'', max_length=50, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment',
+            name='voidDate',
+            field=models.DateTimeField(null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment',
+            name='warehouseId',
+            field=models.IntegerField(default=0, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment_advanced_options',
+            name='storeId',
+            field=models.IntegerField(default=0, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment_insurance_options',
+            name='insuredValue',
+            field=models.FloatField(default=0.0, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment_insurance_options',
+            name='provider',
+            field=models.CharField(default=b'carrier', max_length=15, null=True, blank=True, choices=[(b'shipsurance', b'shipsurance'), (b'carrier', b'carrier')]),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment_weight',
+            name='units',
+            field=models.CharField(default=b'', max_length=50, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='shipment_weight',
+            name='value',
+            field=models.FloatField(default=0.0, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='tag',
+            name='color',
+            field=models.CharField(default=b'#090909', max_length=7, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='tag',
+            name='name',
+            field=models.CharField(default=b'', max_length=100, null=True, blank=True),
+            preserve_default=True,
+        ),
+        migrations.AlterField(
+            model_name='tag',
+            name='tagId',
+            field=models.IntegerField(default=0, null=True, blank=True),
+            preserve_default=True,
+        ),
+    ]

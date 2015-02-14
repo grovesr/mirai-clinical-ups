@@ -1,0 +1,14 @@
+<table class="nav-bar-2" width="100%">
+    <tr>
+        <td align="right">
+            <ul>
+                <li><a{% if sshome %}
+                        class="nav-2-selected"
+                    {% else %}
+                        class="nav-2-unselected"
+                    {% endif %}
+                    href="{% url 'shipstation:shipstation_home' %}">Home</a></li>
+            </ul>
+        </td>
+    </tr>
+</table>

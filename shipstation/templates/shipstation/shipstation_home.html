@@ -1,0 +1,27 @@
+{% extends "base/base.html" %}
+{% block extra_scripts %}
+    <link rel="stylesheet" href="http://code.jquery.com/ui/1.11.0/themes/smoothness/jquery-ui.css"> 
+    <script src="http://code.jquery.com/jquery-1.9.1.js"></script>
+    <script src="http://code.jquery.com/ui/1.11.0/jquery-ui.js"></script>
+    <script>
+        $(document).ready(function() {
+        $('.datepicker').datepicker();
+        });
+    </script>
+{% endblock extra_scripts %}
+{% block nav-local %}
+    {% include "shipstation/shipstation_nav_local.html" %}
+{% endblock nav-local %}
+{% block content %}
+    {% if error_message %}
+        <strong><p>{{ error_message }}</p></strong>
+    {% endif %}
+    <form action="{% url 'shipstation:shipstation_home' %}" method="post"> 
+        {% csrf_token %}
+        {{ dateSpanForm }}
+        <br/>
+        <input type="submit" value="Download Shipstation Orders" class="pkt-action-btns" name="orderDownload"><br/>
+        <input type="submit" value="Download Shipstation Shipments" class="pkt-action-btns" name="shipmentDownload"><br/>
+        <input type="submit" value="Reports" class="pkt-action-btns" name="reports">
+    </form>
+{% endblock content %}
