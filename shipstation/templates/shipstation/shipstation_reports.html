@@ -5,8 +5,8 @@
     {% endif %}
     <form action="{% url 'shipstation:shipstation_reports' startDate stopDate %}" method="post"> 
         {% csrf_token %}
-        {{ dateSpanForm }}
-        <input type="submit" value="SKU Query" class="pkt-action-btns" name="skuQuery">
+        <input type="submit" value="SKU Report" class="pkt-action-btns" name="skuReport">
+         <input type="submit" value="Customer Report" class="pkt-action-btns" name="customerReport">
     </form>
 {% endblock content %}
 

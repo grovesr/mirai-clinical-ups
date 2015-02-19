@@ -7,6 +7,17 @@ from django.utils.dateparse import parse_datetime, parse_date, datetime_re, date
 
 # TODO: Add classes for carriers, products and stores
 
+def get_customerIds(ssgetcustomers):
+    """
+    retrieve the customerIds from the Shipstation get customers object
+    """
+    jsData=ssgetcustomers.json()
+    customerIds=[]
+    customers=jsData['customers']
+    for customer in customers:
+        customerIds.append(customer['customerId'])
+    return customerIds
+
 def get_orderIds(ssgetorders):
     """
     retrieve the orderIds from the Shipstation get orders object
@@ -154,20 +165,48 @@ def parse_shipments(ssgetshipments):
                     thisShipmentItem.save()
     return pages>page
 
+def parse_customers(ssgetcustomers):
+    """
+    takes a Shipstation get customers object that has retrieved a list of customers
+    and populate the Shipstation tables
+    """
+    jsData=ssgetcustomers.json()
+    if isinstance(jsData,dict):
+        data=[]
+        data.append(jsData)
+    else:
+        data=jsData
+        
+    for dataItem in data:
+        customers=dataItem['customers']
+        pages=dataItem['pages']
+        page=dataItem['page']
+        print "total customers: "+str(dataItem['total'])+" page: "+str(page)+" of "+str(pages)
+        for customerData in customers:
+            thisCustomer=customer()
+            thisCustomer.parse(customerData)
+            thisCustomer.save()
+            if customerData['marketplaceUsernames']:
+                for marketplaceUserData in customerData['marketplaceUsernames']:
+                    marketplaceUsername=marketplace_user_name(customer=thisCustomer)
+                    marketplaceUsername.parse(marketplaceUserData)
+                    marketplaceUsername.save()
+    return pages>page
+
 class customer(models.Model):
     """
     Shipstation customer model
     """
     customerId=models.IntegerField(default=0,primary_key=True)
     name=models.CharField(max_length=100,default='', blank=True, null=True)
-    company=models.CharField(max_length=35,default='', blank=True, null=True)
+    company=models.CharField(max_length=100,default='', blank=True, null=True)
     street1=models.CharField(max_length=100,default='', blank=True, null=True)
     street2=models.CharField(max_length=100,default='', blank=True, null=True)
     city=models.CharField(max_length=40,default='', blank=True, null=True)
-    state=models.CharField(max_length=3,default='', blank=True, null=True)
-    postalCode=models.CharField(max_length=11,default='', blank=True, null=True)
-    countryCode=models.CharField(max_length=4,default='', blank=True, null=True)
-    phone=models.CharField(max_length=15,default='', blank=True, null=True)
+    state=models.CharField(max_length=30,default='', blank=True, null=True)
+    postalCode=models.CharField(max_length=30,default='', blank=True, null=True)
+    countryCode=models.CharField(max_length=30,default='', blank=True, null=True)
+    phone=models.CharField(max_length=3,default='', blank=True, null=True)
     email=models.CharField(max_length=100,default='', blank=True, null=True)
     addressVerified=models.CharField(max_length=35,default='', blank=True, null=True)
     
