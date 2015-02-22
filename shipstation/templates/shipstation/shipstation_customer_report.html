@@ -1,0 +1,44 @@
+{% extends "shipstation/shipstation_home.html" %}
+{% load staticfiles %}
+{% block content %}
+    {% if error_message %}
+        <strong><p>{{ error_message }}</p></strong>
+    {% else %}
+        <p>Customer Report:<br/>
+        {% if startDate %}
+            startDate = {{ startDate }}<br/>    
+        {% endif %}
+        {% if stopDate %}
+            stopDate = {{ stopDate }}<br/>    
+        {% endif %}
+        {% if totalOrders %}
+            total shipped orders = {{ totalOrders }}<br/>
+        {% endif %}
+        {% if totalCustomers %}
+            total customers with shipped orders = {{ totalCustomers }}<br/>
+        {% endif %}
+        {% if multipleOrders %}
+            customers who ordered more than once = {{ multipleOrders }}
+        {% endif %}
+        </p>
+        {% if top %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>SKU</th>
+                        <th>Quantity</th>
+                    </tr>
+                </thead>
+                {% for customer,skus in top.iteritems %}
+                    <tr><td>{{ customer }}</td></tr
+                    {% for sku,quantity in skus.iteritems %}
+                        <tr>
+                            <td>{{ sku }}</td>
+                            <td>{{ quantity }}</td>
+                        </tr>
+                    {% endfor %}
+                {% endfor %}
+            </table> 
+        {% endif %}
+    {% endif %}
+{% endblock content %}

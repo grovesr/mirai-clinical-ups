@@ -5,7 +5,13 @@
     <script src="http://code.jquery.com/ui/1.11.0/jquery-ui.js"></script>
     <script>
         $(document).ready(function() {
-        $('.datepicker').datepicker();
+            $('.datepicker').datepicker();
+            var startDate = "{{ startDate }}";
+            startDate = startDate.replace(/-/g,'/');
+            var stopDate = "{{ stopDate }}";
+            stopDate = stopDate.replace(/-/g,'/');
+            $( '#id_startDate' ).val( startDate );
+            $( '#id_stopDate' ).val( stopDate );
         });
     </script>
 {% endblock extra_scripts %}
@@ -16,13 +22,33 @@
     {% if error_message %}
         <strong><p>{{ error_message }}</p></strong>
     {% endif %}
-    <form action="{% url 'shipstation:shipstation_home' %}" method="post"> 
+    <form action="{% url 'shipstation:shipstation_home_dates' startDate stopDate %}" method="post"> 
+        <p>
+            Date of last order downloaded from SS: {{ lastOrderDate|date:"D d M Y" }}
+            {% if addShipmentUpdateButton %}
+                <input type="submit" value="Download Latest Shipstation Orders" class="pkt-action-btns" name="orderLatestDownload">
+            {% endif %}
+            <br/>
+            Date of last shipment downloaded from SS: {{ lastShipmentShipDate|date:"D d M Y" }}
+            {% if addShipmentUpdateButton %}
+                <input type="submit" value="Download Latest Shipstation Shipments" class="pkt-action-btns" name="shipmentLatestDownload">
+            {% endif %}
+            <br/>
+            <input type="submit" value="Download Latest Shipstation Customers" class="pkt-action-btns" name="customerLatestDownload"><br/>
+            <input type="submit" value="Download and Update Shipstation Customers" class="pkt-action-btns" name="customerDownload"><br/>
+        </p>
         {% csrf_token %}
         {{ dateSpanForm }}
         <br/>
-        <input type="submit" value="Download Shipstation Orders" class="pkt-action-btns" name="orderDownload"><br/>
-        <input type="submit" value="Download Shipstation Shipments" class="pkt-action-btns" name="shipmentDownload"><br/>
-        <input type="submit" value="Download Shipstation Customers" class="pkt-action-btns" name="customerDownload"><br/>
-        <input type="submit" value="Reports" class="pkt-action-btns" name="reports">
+        <p>
+            The buttons below use the dates supplied above:
+        </p>
+        <input type="submit" value="Download and Update Shipstation Orders" class="pkt-action-btns" name="orderDownload"><br/>
+        <input type="submit" value="Download and Update Shipstation Shipments" class="pkt-action-btns" name="shipmentDownload"><br/>
+        <p>
+            Reports:
+        </p>
+        <input type="submit" value="SKU Report" class="pkt-action-btns" name="skuReport">
+        <input type="submit" value="Customer Report" class="pkt-action-btns" name="customerReport">
     </form>
 {% endblock content %}

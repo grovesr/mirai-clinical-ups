@@ -1,5 +1,5 @@
 from django.db import models
-from pytz import timezone
+import pytz
 import datetime
 from django.utils.dateparse import parse_datetime, parse_date, datetime_re, date_re
 
@@ -58,10 +58,10 @@ def parse_datestr_tz(dateTimeString,hours=0,minutes=0):
         naive=datetime.datetime.combine(parse_date(dateTimeString), datetime.time(hours,minutes))
     else:
         naive=parse_datetime(dateTimeString)
-    return timezone("America/New_York").localize(naive, is_dst=None)
+    return pytz.utc.localize(naive)
     
 
-def parse_orders(ssgetorders, storeName, storeId):
+def parse_orders(ssgetorders, storeName, storeId, overwrite=False):
     """
     takes a Shipstation get orders object that has retrieved a list of orders
     and populates the Shipstation tables
@@ -79,44 +79,45 @@ def parse_orders(ssgetorders, storeName, storeId):
         page=dataItem['page']
         print "total orders: "+str(dataItem['total'])+" page: "+str(page)+" of "+str(pages)
         for orderData in orders:
-            thisOrder=order()
-            thisOrder.storeId=storeId
-            thisOrder.packSlipType=get_pack_slip_type(storeName)
-            thisOrder.orderType=storeName
-            thisOrder.parse(orderData)
-            thisOrder.save()
-            if orderData['internationalOptions']:
-                internationalOptions=international_options(order=thisOrder)
-                internationalOptions.parse(orderData['internationalOptions'])
-                internationalOptions.save()
-            if orderData['billTo']:
-                billtoAddress=bill_to_address(order=thisOrder)
-                billtoAddress.parse(orderData['billTo'])
-                billtoAddress.save()
-            if orderData['shipTo']:
-                shiptoAddress=order_ship_to_address(order=thisOrder)
-                shiptoAddress.parse(orderData['shipTo'])
-                shiptoAddress.save()
-            if orderData['insuranceOptions']:
-                insuranceOptions=order_insurance_options(order=thisOrder)
-                insuranceOptions.parse(orderData['insuranceOptions'])
-                insuranceOptions.save()
-            if orderData['items']:
-                for itemData in orderData['items']:
-                    thisItem=order_item(order=thisOrder)
-                    thisItem.parse(itemData)
-                    thisItem.save()
-                    if itemData['weight']:
-                        thisWeight=order_item_weight(order_item=thisItem)
-                        thisWeight.parse(itemData['weight'])
-                        thisWeight.save()
-            if orderData['advancedOptions']:
-                thisOpt=order_advanced_options(order=thisOrder)
-                thisOpt.parse(orderData['advancedOptions'])
-                thisOpt.save()
+            if overwrite or order.objects.filter(pk=orderData['orderId']).count()==0:
+                thisOrder=order()
+                thisOrder.storeId=storeId
+                thisOrder.packSlipType=get_pack_slip_type(storeName)
+                thisOrder.orderType=storeName
+                thisOrder.parse(orderData)
+                thisOrder.save()
+                if orderData['internationalOptions']:
+                    internationalOptions=international_options(order=thisOrder)
+                    internationalOptions.parse(orderData['internationalOptions'])
+                    internationalOptions.save()
+                if orderData['billTo']:
+                    billtoAddress=bill_to_address(order=thisOrder)
+                    billtoAddress.parse(orderData['billTo'])
+                    billtoAddress.save()
+                if orderData['shipTo']:
+                    shiptoAddress=order_ship_to_address(order=thisOrder)
+                    shiptoAddress.parse(orderData['shipTo'])
+                    shiptoAddress.save()
+                if orderData['insuranceOptions']:
+                    insuranceOptions=order_insurance_options(order=thisOrder)
+                    insuranceOptions.parse(orderData['insuranceOptions'])
+                    insuranceOptions.save()
+                if orderData['items']:
+                    for itemData in orderData['items']:
+                        thisItem=order_item(order=thisOrder)
+                        thisItem.parse(itemData)
+                        thisItem.save()
+                        if itemData['weight']:
+                            thisWeight=order_item_weight(order_item=thisItem)
+                            thisWeight.parse(itemData['weight'])
+                            thisWeight.save()
+                if orderData['advancedOptions']:
+                    thisOpt=order_advanced_options(order=thisOrder)
+                    thisOpt.parse(orderData['advancedOptions'])
+                    thisOpt.save()
     return pages>page
 
-def parse_shipments(ssgetshipments):
+def parse_shipments(ssgetshipments, overwrite=False):
     """
     takes a Shipstation get shipments object that has retrieved a list of shipments
     and populates the Shipstation tables
@@ -134,38 +135,39 @@ def parse_shipments(ssgetshipments):
         page=dataItem['page']
         print "total shipments: "+str(dataItem['total'])+" page: "+str(page)+" of "+str(pages)
         for shipmentData in shipments:
-            thisShipment=shipment()
-            thisShipment.parse(shipmentData)
-            thisShipment.save()
-            if shipmentData['shipTo']:
-                shiptoAddress=shipment_ship_to_address(shipment=thisShipment)
-                shiptoAddress.parse(shipmentData['shipTo'])
-                shiptoAddress.save()
-            if shipmentData['weight']:
-                thisWeight=shipment_weight(shipment=thisShipment)
-                thisWeight.parse(shipmentData['weight'])
-                thisWeight.save()
-            if shipmentData['dimensions']:
-                thisDimensions=dimensions(shipment=thisShipment)
-                thisDimensions.parse(shipmentData['dimensions'])
-                thisDimensions.save()
-            if shipmentData['insuranceOptions']:
-                insuranceOptions=shipment_insurance_options(shipment=thisShipment)
-                insuranceOptions.parse(shipmentData['insuranceOptions'])
-                insuranceOptions.save()
-            if shipmentData['advancedOptions']:
-                thisOpt=shipment_advanced_options(shipment=thisShipment)
-                thisOpt.parse(shipmentData['advancedOptions'])
-                thisOpt.save()
-            if shipmentData['shipmentItems']:
-                for shipmentItemData in shipmentData['shipmentItems']:
-                    thisShipmentItem=shipment_item(order_item=shipmentItemData['orderItemId'],
-                                                   shipment=thisShipment)
-                    thisShipmentItem.parse(shipmentItemData)
-                    thisShipmentItem.save()
+            if overwrite or shipment.objects.filter(pk=shipmentData['shipmentId']).count()==0:
+                thisShipment=shipment()
+                thisShipment.parse(shipmentData)
+                thisShipment.save()
+                if shipmentData['shipTo']:
+                    shiptoAddress=shipment_ship_to_address(shipment=thisShipment)
+                    shiptoAddress.parse(shipmentData['shipTo'])
+                    shiptoAddress.save()
+                if shipmentData['weight']:
+                    thisWeight=shipment_weight(shipment=thisShipment)
+                    thisWeight.parse(shipmentData['weight'])
+                    thisWeight.save()
+                if shipmentData['dimensions']:
+                    thisDimensions=dimensions(shipment=thisShipment)
+                    thisDimensions.parse(shipmentData['dimensions'])
+                    thisDimensions.save()
+                if shipmentData['insuranceOptions']:
+                    insuranceOptions=shipment_insurance_options(shipment=thisShipment)
+                    insuranceOptions.parse(shipmentData['insuranceOptions'])
+                    insuranceOptions.save()
+                if shipmentData['advancedOptions']:
+                    thisOpt=shipment_advanced_options(shipment=thisShipment)
+                    thisOpt.parse(shipmentData['advancedOptions'])
+                    thisOpt.save()
+                if shipmentData['shipmentItems']:
+                    for shipmentItemData in shipmentData['shipmentItems']:
+                        thisShipmentItem=shipment_item(order_item=shipmentItemData['orderItemId'],
+                                                       shipment=thisShipment)
+                        thisShipmentItem.parse(shipmentItemData)
+                        thisShipmentItem.save()
     return pages>page
 
-def parse_customers(ssgetcustomers):
+def parse_customers(ssgetcustomers, overwrite=False):
     """
     takes a Shipstation get customers object that has retrieved a list of customers
     and populate the Shipstation tables
@@ -183,14 +185,15 @@ def parse_customers(ssgetcustomers):
         page=dataItem['page']
         print "total customers: "+str(dataItem['total'])+" page: "+str(page)+" of "+str(pages)
         for customerData in customers:
-            thisCustomer=customer()
-            thisCustomer.parse(customerData)
-            thisCustomer.save()
-            if customerData['marketplaceUsernames']:
-                for marketplaceUserData in customerData['marketplaceUsernames']:
-                    marketplaceUsername=marketplace_user_name(customer=thisCustomer)
-                    marketplaceUsername.parse(marketplaceUserData)
-                    marketplaceUsername.save()
+            if overwrite or customer.objects.filter(pk=customerData['customerId']).count()==0:
+                thisCustomer=customer()
+                thisCustomer.parse(customerData)
+                thisCustomer.save()
+                if customerData['marketplaceUsernames']:
+                    for marketplaceUserData in customerData['marketplaceUsernames']:
+                        marketplaceUsername=marketplace_user_name(customer=thisCustomer)
+                        marketplaceUsername.parse(marketplaceUserData)
+                        marketplaceUsername.save()
     return pages>page
 
 class customer(models.Model):
@@ -550,7 +553,7 @@ class shipment_item(models.Model):
     fulfillmentSku=models.CharField(max_length=100,default='', blank=True, null=True)
     
     def __unicode__(self):
-        return "Shipstation shipment_item for order_item:"+str(self.order_item.orderItemId)
+        return "Shipstation shipment_item for order_item:"+str(self.order_item)
     
     def parse(self,orderData):
         if not orderData:

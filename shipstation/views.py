@@ -2,12 +2,13 @@ from django.shortcuts import render
 from ssapi import ssapi
 from django.conf import settings
 from django.core.urlresolvers import reverse
-from shipstation.models import parse_orders, get_orderIds, parse_shipments, parse_customers, get_shipmentIds, get_customerIds, order_item, parse_datestr_tz, shipment_item,customer, order
+import datetime
+from shipstation.models import parse_orders, get_orderIds, parse_shipments, parse_customers, get_shipmentIds, get_customerIds, order_item, parse_datestr_tz, shipment_item,customer, order, shipment
 from MiraiDebug.forms import DateSpanQueryForm
 from django.http.response import HttpResponseRedirect
 from collections import OrderedDict
 from django.core.exceptions import ObjectDoesNotExist, MultipleObjectsReturned
-from Tkconstants import MULTIPLE
+from django.contrib.auth.decorators import login_required
 # Create your views here.
 def shipstation_get_customers_orders(orderedItems):
     # build a customer dictionary, each one contains a dictionary of skus ordered and how many
@@ -45,7 +46,8 @@ def reorder_ssapi_datestr_to_dbstr(dateString):
     pieces=dateString.split('-')
     return pieces[2]+"-"+pieces[0]+"-"+pieces[1]
 
-def shipstation_customer_download(request):
+@login_required()
+def shipstation_customer_download(request, overwrite=False):
     #query the SS API
     ssget=ssapi.get(api_key=settings.SS_API_KEY,api_secret=settings.SS_API_SECRET,api_endpoint=settings.SS_API_ENDPOINT)
     customerIds=[]
@@ -55,12 +57,13 @@ def shipstation_customer_download(request):
         ssget.customers(page=pageNo)
         if ssget.json()['total']==0:
             break
-        morePages=parse_customers(ssget)
+        morePages=parse_customers(ssget,overwrite=overwrite)
         customerIds+=get_customerIds(ssget)
         pageNo+=1
     return customerIds
 
-def shipstation_shipment_download(request,startDate,stopDate):
+@login_required()
+def shipstation_shipment_download(request,startDate,stopDate, overwrite=False):
     #query the SS API
     ssget=ssapi.get(api_key=settings.SS_API_KEY,api_secret=settings.SS_API_SECRET,api_endpoint=settings.SS_API_ENDPOINT)
     shipmentIds=[]
@@ -71,12 +74,13 @@ def shipstation_shipment_download(request,startDate,stopDate):
                      includeShipmentItems='true',page=pageNo)
         if ssget.json()['total']==0:
             break
-        morePages=parse_shipments(ssget)
+        morePages=parse_shipments(ssget,overwrite=overwrite)
         shipmentIds+=get_shipmentIds(ssget)
         pageNo+=1
     return shipmentIds
 
-def shipstation_order_download(request,startDate,stopDate):
+@login_required()
+def shipstation_order_download(request,startDate,stopDate, overwrite=False):
     #query the SS API
     ssget=ssapi.get(api_key=settings.SS_API_KEY,api_secret=settings.SS_API_SECRET,api_endpoint=settings.SS_API_ENDPOINT)
     ssget.stores()
@@ -95,58 +99,135 @@ def shipstation_order_download(request,startDate,stopDate):
                          storeId=storeId,page=pageNo)
             if ssget.json()['total']==0:
                 break
-            morePages=parse_orders(ssget,storeName,storeId)
+            morePages=parse_orders(ssget,storeName,storeId,overwrite=overwrite)
             orderIds+=get_orderIds(ssget)
             pageNo+=1
     return orderIds
 
-def shipstation_home(request):
+@login_required()
+def shipstation_home_dates(request,startDate,stopDate,lastOrderDate=None):
+    lastShipmentShipDate=shipment.objects.all().order_by('-shipDate').values('shipDate')[0]
+    lastShipmentShipDate=lastShipmentShipDate['shipDate']
+    if not lastOrderDate:
+        lastOrderDate=order.objects.all().order_by('-orderDate').values('orderDate')[0]
+        lastOrderDate=lastOrderDate['orderDate']
+    now=datetime.datetime.now()
+    nowstr=now.strftime('%Y-%m-%dT%H:%M:%S')
+    today=parse_datestr_tz(nowstr, now.time().hour,now.time().min)
+    addShipmentUpdateButton=False
+    if lastShipmentShipDate<today:
+        addShipmentUpdateButton=True
+    if lastOrderDate<today:
+        addOrderUpdateButton=True
     if request.method=="POST":
         dateSpanForm=DateSpanQueryForm(request.POST)
         if dateSpanForm.is_valid():
             startDate=request.POST.get('startDate').replace('/','-')
             stopDate=request.POST.get('stopDate').replace('/','-')
             if request.POST.get('orderDownload'):
-                orderIds=shipstation_order_download(request, startDate, stopDate)
+                orderIds=shipstation_order_download(request, startDate, stopDate, overwrite=False)
                 if len(orderIds)==0:
-                    return render(request, 'shipstation/shipstation_home.html', {
+                    return render(request, 'shipstation/shipstation_home_dates.html', {
                         'error_message': "No orders found for this date range",
                         'shipstation':1,
                         'sshome':1,
+                        'startDate':startDate,
+                        'stopDate':stopDate,
                     })
-                return HttpResponseRedirect(reverse('shipstation:shipstation_reports', args=[startDate,stopDate]))
-            if request.POST.get('reports'):
-                return HttpResponseRedirect(reverse('shipstation:shipstation_reports', args=[startDate,stopDate]))
+                return HttpResponseRedirect(reverse('shipstation:shipstation_home_dates', args=[startDate,stopDate]))
             if request.POST.get('shipmentDownload'):
-                shipmentIds=shipstation_shipment_download(request, startDate, stopDate)
+                shipmentIds=shipstation_shipment_download(request, startDate, stopDate, overwrite=False)
                 if len(shipmentIds)==0:
-                    return render(request, 'shipstation/shipstation_home.html', {
+                    return render(request, 'shipstation/shipstation_home_dates.html', {
                         'error_message': "No shipments found for this date range",
                         'shipstation':1,
                         'sshome':1,
+                        'startDate':startDate,
+                        'stopDate':stopDate,
                     })
-                return HttpResponseRedirect(reverse('shipstation:shipstation_reports', args=[startDate,stopDate]))
+                return HttpResponseRedirect(reverse('shipstation:shipstation_home_dates', args=[startDate,stopDate]))
+            if request.POST.get('shipmentLatestDownload'):
+                shipStartDate=lastShipmentShipDate.strftime('%m-%d-%Y')
+                shipStopDate=now.strftime('%m-%d-%Y')
+                shipmentIds=shipstation_shipment_download(request, shipStartDate, shipStopDate, overwrite=False)
+                if len(shipmentIds)==0:
+                    return render(request, 'shipstation/shipstation_home_dates.html', {
+                        'error_message': "No shipments found for this date range",
+                        'shipstation':1,
+                        'sshome':1,
+                        'startDate':shipStartDate,
+                        'stopDate':shipStopDate,
+                    })
+                return HttpResponseRedirect(reverse('shipstation:shipstation_home_dates', args=[startDate,stopDate]))
+            if request.POST.get('orderLatestDownload'):
+                orderStartDate=lastOrderDate.strftime('%m-%d-%Y')
+                orderStopDate=now.strftime('%m-%d-%Y')
+                orderIds=shipstation_order_download(request, orderStartDate, orderStopDate, overwrite=False)
+                if len(orderIds)==0:
+                    return render(request, 'shipstation/shipstation_home_dates.html', {
+                        'error_message': "No orders found for this date range",
+                        'shipstation':1,
+                        'sshome':1,
+                        'startDate':orderStartDate,
+                        'stopDate':orderStopDate,
+                    })
+                return HttpResponseRedirect(reverse('shipstation:shipstation_home_dates', args=[startDate,stopDate]))
+            if request.POST.get('skuReport'):
+                # query the local database for SKUs
+                return HttpResponseRedirect(reverse('shipstation:shipstation_sku_report', args=[startDate,stopDate]))
+            if request.POST.get('customerReport'):
+                # query the local database for Customers
+                return HttpResponseRedirect(reverse('shipstation:shipstation_customer_report',
+                                            args=[startDate,stopDate]))
             if request.POST.get('customerDownload'):
-                customerIds=shipstation_customer_download(request)
+                customerIds=shipstation_customer_download(request, overwrite=True)
                 if len(customerIds)==0:
                     return render(request, 'shipstation/shipstation_home.html', {
                         'error_message': "No customers found",
                         'shipstation':1,
                         'sshome':1,
+                        'startDate':startDate,
+                        'stopDate':stopDate,
                     })
-                return HttpResponseRedirect(reverse('shipstation:shipstation_reports', args=[startDate,stopDate]))
+                return HttpResponseRedirect(reverse('shipstation:shipstation_home_dates', args=[startDate,stopDate]))
+            if request.POST.get('customerLatestDownload'):
+                customerIds=shipstation_customer_download(request, overwrite=False)
+                if len(customerIds)==0:
+                    return render(request, 'shipstation/shipstation_home.html', {
+                        'error_message': "No customers found",
+                        'shipstation':1,
+                        'sshome':1,
+                        'startDate':startDate,
+                        'stopDate':stopDate,
+                    })
+                return HttpResponseRedirect(reverse('shipstation:shipstation_home_dates', args=[startDate,stopDate]))
     else:
         dateSpanForm=DateSpanQueryForm()
     return render(request,'shipstation/shipstation_home.html', {'dateSpanForm':dateSpanForm,
                                                                    'shipstation':1,
-                                                                   'sshome':1,})
+                                                                   'sshome':1,
+                                                                   'lastOrderDate':lastOrderDate,
+                                                                   'addOrderUpdateButton':addOrderUpdateButton,
+                                                                   'lastShipmentShipDate':lastShipmentShipDate,
+                                                                   'addShipmentUpdateButton':addShipmentUpdateButton,
+                                                                    'startDate':startDate,
+                                                                    'stopDate':stopDate,})
 
+@login_required()
+def shipstation_home(request):
+    lastOrderDate=order.objects.all().order_by('-orderDate').values('orderDate')[0]
+    startDate=lastOrderDate['orderDate'].strftime('%m-%d-%Y')
+    stopDate=lastOrderDate['orderDate'].strftime('%m-%d-%Y')
+    return shipstation_home_dates(request,startDate,stopDate,lastOrderDate=lastOrderDate['orderDate'])
+
+
+@login_required()
 def shipstation_sku_report(request,startDate,stopDate):
     
     parsedStartDate=parse_datestr_tz(reorder_ssapi_datestr_to_dbstr(startDate),0,0)
     parsedStopDate=parse_datestr_tz(reorder_ssapi_datestr_to_dbstr(stopDate),23,59)
-    orderItems=order_item.objects.filter(order__orderDate__lte=parsedStopDate,
-                                          order__orderDate__gte=parsedStartDate,
+    orderItems=order_item.objects.filter(order__shipDate__lte=parsedStopDate,
+                                          order__shipDate__gte=parsedStartDate,
                                           order__orderStatus__contains='shipped')
     shipmentItems=shipment_item.objects.filter(shipment__shipDate__lte=parsedStopDate,
                                           shipment__shipDate__gte=parsedStartDate,shipment__voided=0)
@@ -178,6 +259,7 @@ def shipstation_sku_report(request,startDate,stopDate):
                    'stopDate':stopDate,'skus':sortedSkus,
                    'totalShippedSkus':totalShippedSkus})
     
+@login_required()
 def shipstation_customer_report(request,startDate,stopDate):
     parsedStartDate=parse_datestr_tz(reorder_ssapi_datestr_to_dbstr(startDate),0,0)
     parsedStopDate=parse_datestr_tz(reorder_ssapi_datestr_to_dbstr(stopDate),23,59)
@@ -230,18 +312,4 @@ def shipstation_customer_report(request,startDate,stopDate):
                    'multipleOrders':multipleOrders,
                    'startDate':startDate,
                    'stopDate':stopDate})
-
-def shipstation_reports(request,startDate,stopDate):
-    if request.method == 'POST':
-        if request.POST.get('skuReport'):
-            # query the local database for SKUs
-            return HttpResponseRedirect(reverse('shipstation:shipstation_sku_report', args=[startDate,stopDate]))
-        if request.POST.get('customerReport'):
-            # query the local database for Customers
-            return HttpResponseRedirect(reverse('shipstation:shipstation_customer_report',
-                                        args=[startDate,stopDate]))
-    return render(request,'shipstation/shipstation_reports.html',{
-                                                                   'shipstation':1,
-                                                                   'startDate':startDate,
-                                                                   'stopDate':stopDate
-                                                                   })
+    

@@ -11,8 +11,23 @@ from ups.models import mirai_check_args, mirai_init_ups_pkt_from_file,mirai_init
 from ups.forms import FileNameForm, PhForm, PdForm, TitleErrorList
 from MiraiDebug.forms import DateSpanQueryForm
 from django.forms.models import inlineformset_factory, modelform_factory
+import pytz
+from django.utils.dateparse import parse_datetime, parse_date, date_re
+from django.contrib.auth.decorators import login_required
 
 # helper functions
+
+def parse_datestr_tz(dateTimeString,hours=0,minutes=0):
+    if date_re.match(dateTimeString):
+        naive=datetime.datetime.combine(parse_date(dateTimeString), datetime.time(hours,minutes))
+    else:
+        naive=parse_datetime(dateTimeString)
+    return pytz.utc.localize(naive)
+
+def reorder_date_mdy_to_ymd(dateString,sep):
+    parts=dateString.split(sep)
+    return parts[2]+"-"+parts[0]+"-"+parts[1]
+
 def bind_formset(formset):
     """
     Bind initial data to a formset
@@ -55,12 +70,13 @@ def bind_formset(formset):
 
 # Create your views here.
 
+@login_required()
 def ups_home(request):
     return render(request,'ups/ups_home.html',{'ups':1})
 
 def blank(request):
     return render(request,'base/blank.html')
-
+@login_required()
 def pick_ticket_detail(request, pk):
     try:
         ups_pkt=PickTicket.objects.get(pk=pk)
@@ -73,7 +89,7 @@ def pick_ticket_detail(request, pk):
     return render(request,'ups/pick_ticket_detail.html', {'ups_pkt':ups_pkt,
                                                           "ups":1,
                                                           "picktickets":1,})
-
+@login_required()
 def pick_ticket_edit_ph(request, pk):
     try:
         ups_ph=PH.objects.get(pk=pk)
@@ -103,7 +119,7 @@ def pick_ticket_edit_ph(request, pk):
                                                            "picktickets":1,
                 "pdForms": pdForms,"warning_message":warning_message,
     })
-
+@login_required()
 def pick_ticket_edit(request, pk):
     try:
         ups_pkt=PickTicket.objects.get(pk=pk)
@@ -141,6 +157,7 @@ def pick_ticket_edit(request, pk):
         "warning_message":warning_message,
     })
 
+@login_required()
 def pick_ticket_file_report(request, pk):
     try:
         ups_pkt=PickTicket.objects.get(pk=pk)
@@ -148,6 +165,7 @@ def pick_ticket_file_report(request, pk):
         return render(request,'ups/pick_ticket_file_report.html', {'error_message':'PickTicket '+str(pk)+' doesn''t exist'})
     return render(request,'ups/pick_ticket_file_report.html', {'ups_pkt':ups_pkt})
 
+@login_required()
 def pick_ticket_report(request, pk):
     try:
         ups_pkt=PickTicket.objects.get(pk=pk)
@@ -155,6 +173,7 @@ def pick_ticket_report(request, pk):
         return render(request,'ups/pick_ticket_report.html', {'error_message':'PickTicket '+str(pk)+' doesn''t exist'})
     return render(request,'ups/pick_ticket_report.html', {'ups_pkt':ups_pkt})
 
+@login_required()
 def pick_ticket_error_report(request, pk):
     try:
         ups_pkt=PickTicket.objects.get(pk=pk)
@@ -162,6 +181,7 @@ def pick_ticket_error_report(request, pk):
         return render(request,'ups/pick_ticket_error_report.html', {'error_message':'PickTicket '+str(pk)+' doesn''t exist'})
     return render(request,'ups/pick_ticket_error_report.html', {'ups_pkt':ups_pkt})
 
+@login_required()
 def pick_ticket_pkt_report(request, pk):
     try:
         ups_pkt=PickTicket.objects.get(pk=pk)
@@ -169,55 +189,80 @@ def pick_ticket_pkt_report(request, pk):
         return render(request,'ups/pick_ticket_pkt_report.html', {'error_message':'PickTicket '+str(pk)+' doesn''t exist'})
     return render(request,'ups/pick_ticket_pkt_report.html', {'ups_pkt':ups_pkt})
 
-def pick_ticket_index(request):
-    today=timezone.now()
-    pkt_list=PickTicket.objects.filter(DOC_DATE__gte = (today - datetime.timedelta(days=7)))
+@login_required()
+def pick_ticket_index_dates(request,startDate,stopDate):
     # if this is a POST request we need to process the form data
-    if request.method == 'POST':
-        # create a form instance and populate it with data from the request:
-        form = FileNameForm(request.POST)
-        # check whether it's valid:
-        if form.is_valid():
-            # process the data in form.cleaned_data as required
-            # create a PickTicket object and initialize it
-            try:
-                files=request.POST.get("files").split('&')
-            except KeyError:
-                return render(request, 'ups/pick_ticket_index.html', {
-                    'error_message': "No files selected.",
-                    "ups":1,
-                    "picktickets":1,
-                })
-            inputType=mirai_check_args(files)
-            if  inputType== -1:
-                return render(request, 'ups/pick_ticket_index.html', {
-                    'error_message': "Problem with the files.",
-                    "ups":1,
-                    "picktickets":1,
-                })
-            upsPktId=mirai_init_ups_pkt_from_file(files,inputType)
-            if upsPktId == -1:
-                return render(request, 'ups/pick_ticket_index.html', {
-                    'error_message': "Problem with the files.",
-                    "ups":1,
-                    "picktickets":1,
-                })
-            #
-            # redirect to a new URL:)
-            return HttpResponseRedirect(reverse('ups:pick_ticket_detail',args=[upsPktId,]),
-                                        {"ups":1,
-                                        "picktickets":1,
-                                         })
+    if request.method=="POST":
+        dateSpanForm=DateSpanQueryForm(request.POST)
+        if dateSpanForm.is_valid():
+            startDate=request.POST.get('startDate')
+            stopDate=request.POST.get('stopDate')
+            parsedStartDate=parse_datestr_tz(reorder_date_mdy_to_ymd(startDate,'/'),0,0)
+            parsedStopDate=parse_datestr_tz(reorder_date_mdy_to_ymd(stopDate,'/'),23,59)
+            startDate=startDate.replace('/','-')
+            stopDate=stopDate.replace('/','-')
+            pkt_list=PickTicket.objects.filter(DOC_DATE__gte = parsedStartDate,
+                                           DOC_DATE__lte = parsedStopDate)
+            if request.POST.get('queryPickticketDates'):
+                return HttpResponseRedirect(reverse('ups:pick_ticket_index_dates', args=[startDate,stopDate]))
+            # create a form instance and populate it with data from the request:
+            form = FileNameForm(request.POST)
+            # check whether it's valid:
+            if form.is_valid():
+                # process the data in form.cleaned_data as required
+                # create a PickTicket object and initialize it
+                try:
+                    files=request.POST.get("files").split('&')
+                except KeyError:
+                    return render(request, 'ups/pick_ticket_index_dates.html', {
+                        'error_message': "No files selected.",
+                        'dateSpanForm':dateSpanForm,
+                        "ups":1,
+                        "picktickets":1,
+                    })
+                inputType=mirai_check_args(files)
+                if  inputType== -1:
+                    return render(request, 'ups/pick_ticket_index_dates.html', {
+                        'error_message': "Problem with the files.",
+                        'dateSpanForm':dateSpanForm,
+                        "ups":1,
+                        "picktickets":1,
+                    })
+                upsPktId=mirai_init_ups_pkt_from_file(files,inputType)
+                if upsPktId == -1:
+                    return render(request, 'ups/pick_ticket_index_dates.html', {
+                        'error_message': "Problem with the files.",
+                        'dateSpanForm':dateSpanForm,
+                        "ups":1,
+                        "picktickets":1,
+                    })
+                #
+                # redirect to a new URL:)
+                return HttpResponseRedirect(reverse('ups:pick_ticket_detail',args=[upsPktId,]),
+                                            {"ups":1,
+                                            "picktickets":1,
+                                             })
     # if a GET (or any other method) we'll create a blank form
     else:
         form=FileNameForm()
+        dateSpanForm=DateSpanQueryForm()
         errorMessage=""
+        parsedStartDate=parse_datestr_tz(reorder_date_mdy_to_ymd(startDate,'-'), 0, 0)
+        parsedStopDate=parse_datestr_tz(reorder_date_mdy_to_ymd(stopDate,'-'), 23, 59)
+        stopDate=parsedStopDate.strftime("%m-%d-%Y")
+        startDate=parsedStartDate.strftime("%m-%d-%Y")
+        
+        pkt_list=PickTicket.objects.filter(DOC_DATE__gte = parsedStartDate,
+                                           DOC_DATE__lte = parsedStopDate)
         if pkt_list.count()==0:
             errorMessage="No PickTickets"
-    return render(request, 'ups/pick_ticket_index.html', {'form': form,
+    return render(request, 'ups/pick_ticket_index_dates.html', {'form': form,
                                                           'pkt_list':pkt_list,
+                                                          'dateSpanForm':dateSpanForm,
                                                           'ups':1,
                                                           'picktickets':1,
+                                                          'startDate':startDate,
+                                                          'stopDate':stopDate,
                                                           'error_message':errorMessage,})
     
     
@@ -225,6 +270,14 @@ def pick_ticket_index(request):
         return render(request,'ups/pick_ticket_index.html', {'error_message':'No PickTickets to display'})
     return render(request,'ups/pick_ticket_index.html', {'pkt_list':pkt_list})
 
+@login_required()
+def pick_ticket_index(request):
+    now=timezone.now()
+    stopDate=now.strftime("%m-%d-%Y")
+    startDate=(now - datetime.timedelta(days=7)).strftime("%m-%d-%Y")
+    return pick_ticket_index_dates(request, startDate, stopDate)
+
+@login_required()
 def pick_ticket_from_ssapi(request):
     if request.method=="POST":
         dateSpanForm=DateSpanQueryForm(request.POST)

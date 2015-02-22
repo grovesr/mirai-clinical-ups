@@ -3,3 +3,4 @@ from shipstation.models import customer,order,shipment,insurance_options,interna
 # Register your models here.
 admin.site.register(order)
 admin.site.register(shipment)
+admin.site.register(customer)

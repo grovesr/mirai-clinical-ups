@@ -10,6 +10,14 @@
 
 <body>
     {% block branding %}<img src="{% static 'base/img/logo.gif' %}" width="300px"/>{% endblock branding %}
+    {% block user-management %}
+        <div class="user-management">
+            <span>welcome: {{ user.username }}</span>
+            <a href="{% url 'logout' %}">
+                logout
+            </a>
+        </div>
+    {% endblock user-management %}
     {% block nav-global %}
         {% include "base/nav_global.html" %}
     {% endblock nav-global %}

@@ -3,6 +3,20 @@
 {% block extra_scripts %}
     <script src="https://www.dropbox.com/static/api/2/dropins.js" id="dropboxjs" data-app-key="m76qecnh6atbi8f" ></script>
     <script src="{% static 'ups/js/chooser.js' %}"></script>
+    <link rel="stylesheet" href="http://code.jquery.com/ui/1.11.0/themes/smoothness/jquery-ui.css"> 
+    <script src="http://code.jquery.com/jquery-1.9.1.js"></script>
+    <script src="http://code.jquery.com/ui/1.11.0/jquery-ui.js"></script>
+    <script>
+        $(document).ready(function() {
+            $('.datepicker').datepicker();
+            var startDate = "{{ startDate }}";
+            startDate = startDate.replace(/-/g,'/');
+            var stopDate = "{{ stopDate }}";
+            stopDate = stopDate.replace(/-/g,'/');
+            $( '#id_startDate' ).val( startDate );
+            $( '#id_stopDate' ).val( stopDate );
+        });
+    </script>
 {% endblock extra_scripts %}
 {% block content %}
     {% if error_message %}
@@ -17,15 +31,17 @@
    {% endif %}
    <div id="container">
         {# buttons go here #}
-        <a class="pkt-action-btns" id="ss-button" href="{% url 'ups:pick_ticket_from_ssapi' %}"><button type="button">Shipstation Query</button></aticket
+        <a class="pkt-action-btns" id="ss-button" href="{% url 'ups:pick_ticket_from_ssapi' %}"><button type="button">Shipstation Query</button></a>
     </div>
-    <div id="returned_files">
-            {# returned filenames go here #}
-            <ul id="file_list">
-            </ul>
-        <form action="{% url 'ups:pick_ticket_index' %}" method="post">
-            {% csrf_token %}
-            {{ form }}
-        </form>
-    </div>
+    <form action="{% url 'ups:pick_ticket_index_dates' startDate stopDate %}" method="post">
+        {% csrf_token %}
+        {{ dateSpanForm }}
+        <input type="submit" value="Query Picktickets" class="pkt-action-btns" name="queryPickticketDates"><br/>
+        <div id="returned_files">
+                {# returned filenames go here #}
+                <ul id="file_list">
+                </ul>
+                {{ form }}
+        </div>
+    </form>
 {% endblock content %}
